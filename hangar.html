@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hangar · EVE Industry</title>
-<link rel="stylesheet" href="styles.css?v=20261108h">
+<link rel="stylesheet" href="styles.css?v=20261108i">
 </head>
 <body data-page="hangar">
 <div class="container">
@@ -53,11 +53,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108h"></script>
-<script src="eve-industry-data.js?v=20261108h"></script>
-<script src="industry-core.js?v=20261108h"></script>
-<script src="auth.js?v=20261108h"></script>
-<script src="app-common.js?v=20261108h"></script>
+<script src="config.js?v=20261108i"></script>
+<script src="eve-industry-data.js?v=20261108i"></script>
+<script src="industry-core.js?v=20261108i"></script>
+<script src="auth.js?v=20261108i"></script>
+<script src="app-common.js?v=20261108i"></script>
 <script>
 const Core = window.EveIndustryCore;
 const App = window.EveApp;
@@ -67,7 +67,7 @@ let bpTypeToRecipes = new Map();
 let nameToTypeId = new Map();
 
 function typeName(id) {
-  return (SDE && SDE.names && SDE.names[String(id)]) || ('Type ' + id);
+  return App.getTypeName(id);
 }
 
 function rebuildMaps() {
@@ -256,6 +256,9 @@ async function init() {
   if (cache) {
     document.getElementById('esiSyncStatus').innerHTML =
       `<span class="muted">Cached sync ${App.formatLocal(cache.at)}</span>`;
+    try {
+      await App.resolveMissingTypeNames(App.collectTypeIdsFromCache(cache));
+    } catch {}
     renderHangar();
   }
 }

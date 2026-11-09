@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EVE Online Industry Calculator</title>
-<link rel="stylesheet" href="styles.css?v=20261108h">
+<link rel="stylesheet" href="styles.css?v=20261108i">
 </head>
 <body data-page="calc">
 <div class="container">
@@ -345,11 +345,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108h"></script>
-<script src="eve-industry-data.js?v=20261108h"></script>
-<script src="industry-core.js?v=20261108h"></script>
-<script src="auth.js?v=20261108h"></script>
-<script src="app-common.js?v=20261108h"></script>
+<script src="config.js?v=20261108i"></script>
+<script src="eve-industry-data.js?v=20261108i"></script>
+<script src="industry-core.js?v=20261108i"></script>
+<script src="auth.js?v=20261108i"></script>
+<script src="app-common.js?v=20261108i"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -417,7 +417,7 @@ function safeSet(key, value) {
 }
 
 function typeName(id) {
-  return SDE.names[String(id)] || `Type ${id}`;
+  return (window.EveApp && EveApp.getTypeName) ? EveApp.getTypeName(id) : (SDE.names[String(id)] || `Type ${id}`);
 }
 function hoursFromSeconds(sec) {
   return (Number(sec) || 0) / 3600;

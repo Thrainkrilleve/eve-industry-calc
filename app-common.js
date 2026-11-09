@@ -5,11 +5,12 @@
   'use strict';
 
   const ESI_CACHE_KEY = 'eveIndustryEsiCache_v1';
+  const TYPE_NAMES_KEY = 'eveIndustryTypeNames_v1';
   const STRUCTURES_KEY = 'eveIndustryStructures_v1';
   const PENDING_BP_KEY = 'eveIndustryPendingBp_v1';
   const ESI_TOKEN_KEY = 'eveIndustryEsiToken_v1';
   const DEV_KEY = 'eveIndustryDev_v1';
-  const ASSET_VERSION = '20261108h';
+  const ASSET_VERSION = '20261108i';
 
   const ACTIVITY_NAMES = {
     1: 'Manufacturing',
@@ -33,13 +34,82 @@
   }
 
   function loadEsiCache() {
-    return safeGet(ESI_CACHE_KEY, null);
+    const raw = safeGet(ESI_CACHE_KEY, null);
+    return raw ? retagOwners(raw) : null;
   }
   function saveEsiCache(cache) {
-    safeSet(ESI_CACHE_KEY, cache);
+    safeSet(ESI_CACHE_KEY, cache ? retagOwners(cache) : null);
   }
   function clearEsiCacheStorage() {
     try { localStorage.removeItem(ESI_CACHE_KEY); } catch {}
+  }
+
+  function loadTypeNameCache() {
+    const raw = safeGet(TYPE_NAMES_KEY, {});
+    return raw && typeof raw === 'object' ? raw : {};
+  }
+  function saveTypeNameCache(map) {
+    safeSet(TYPE_NAMES_KEY, map || {});
+  }
+  function getTypeName(id) {
+    const tid = Number(id);
+    if (!Number.isFinite(tid) || tid <= 0) return 'Unknown type';
+    const sde = global.EVE_INDUSTRY_SDE;
+    if (sde && sde.names && sde.names[String(tid)]) return sde.names[String(tid)];
+    const cached = loadTypeNameCache()[String(tid)];
+    if (cached) return cached;
+    return 'Type ' + tid;
+  }
+
+  async function resolveMissingTypeNames(ids) {
+    const Core = global.EveIndustryCore;
+    if (!Core || !Core.fetchUniverseNames) return loadTypeNameCache();
+    const cache = loadTypeNameCache();
+    const sde = global.EVE_INDUSTRY_SDE;
+    const missing = [...new Set((ids || []).map(Number))]
+      .filter((tid) => Number.isFinite(tid) && tid > 0)
+      .filter((tid) => !(sde && sde.names && sde.names[String(tid)]) && !cache[String(tid)]);
+    if (!missing.length) return cache;
+    const fetched = await Core.fetchUniverseNames(missing);
+    for (const [id, name] of Object.entries(fetched || {})) {
+      cache[String(id)] = name;
+    }
+    saveTypeNameCache(cache);
+    return cache;
+  }
+
+  function collectTypeIdsFromCache(cache) {
+    const ids = [];
+    for (const bp of (cache && cache.blueprints) || []) ids.push(bp.type_id);
+    for (const a of (cache && cache.assets) || []) ids.push(a.type_id);
+    for (const job of (cache && cache.jobs) || []) {
+      ids.push(job.blueprint_type_id, job.product_type_id);
+    }
+    return ids.filter((n) => n != null);
+  }
+
+  function retagOwners(cache) {
+    if (!cache) return cache;
+    const chars = cache.characters || [];
+    const fallback = chars.length === 1 ? chars[0] : null;
+    const byId = new Map(chars.map((c) => [Number(c.id), c]));
+    function fix(row) {
+      if (row._ownerId && row._ownerName) return row;
+      if (row._ownerId && byId.has(Number(row._ownerId))) {
+        const c = byId.get(Number(row._ownerId));
+        return { ...row, _ownerName: c.name };
+      }
+      if (fallback) {
+        return { ...row, _ownerId: fallback.id, _ownerName: fallback.name };
+      }
+      return row;
+    }
+    return {
+      ...cache,
+      blueprints: (cache.blueprints || []).map(fix),
+      assets: (cache.assets || []).map(fix),
+      jobs: (cache.jobs || []).map(fix)
+    };
   }
 
   function formatQty(n) {
@@ -225,7 +295,7 @@
     const assetQty = Core.aggregateAssetsByType(assets);
     const active = results.find((r) => r.owner.id === ((EveAuth.character() || {}).id)) || results[0];
     const locations = await rebuildLocations(Core, blueprints, assets, jobs, active.token);
-    const cache = {
+    let cache = {
       at: Date.now(),
       scope,
       characters: targets.map((t) => ({ id: t.id, name: t.name })),
@@ -235,6 +305,16 @@
       locations,
       assetQty
     };
+    cache = retagOwners(cache);
+    if (statusEl) statusEl.textContent = 'Resolving item names…';
+    await resolveMissingTypeNames(collectTypeIdsFromCache(cache));
+    // Retry unresolved structure labels with docking-scoped lookup.
+    for (const loc of cache.locations || []) {
+      if (loc.kind !== 'structure') continue;
+      if (loc.name && !/^Structure\s+\d+$/i.test(loc.name)) continue;
+      const name = await Core.fetchStructureName(loc.id, active.token);
+      if (name) loc.name = name;
+    }
     saveEsiCache(cache);
     if (statusEl) {
       statusEl.innerHTML =
@@ -296,6 +376,7 @@
 
   /** Build character → location → { assets, blueprints } tree. */
   function groupHangar(cache, Core) {
+    cache = retagOwners(cache);
     const blueprints = (cache && cache.blueprints) || [];
     const assets = (cache && cache.assets) || [];
     const locations = (cache && cache.locations) || [];
@@ -307,6 +388,8 @@
       const key = String(id || 'unknown');
       if (!byChar.has(key)) {
         byChar.set(key, { id: id || null, name: name || 'Unknown', locations: new Map() });
+      } else if (name && byChar.get(key).name === 'Unknown') {
+        byChar.get(key).name = name;
       }
       return byChar.get(key);
     }
@@ -448,6 +531,9 @@
     loadEsiCache,
     saveEsiCache,
     clearEsiCacheStorage,
+    getTypeName,
+    resolveMissingTypeNames,
+    collectTypeIdsFromCache,
     formatQty,
     formatIsk,
     formatLocal,

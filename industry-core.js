@@ -584,6 +584,29 @@
     return qty;
   }
 
+  /** Resolve type/station/etc names via ESI (batches of 1000). Structures usually need fetchStructureName. */
+  async function fetchUniverseNames(ids) {
+    const unique = [...new Set((ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0))];
+    const out = {};
+    for (let i = 0; i < unique.length; i += 1000) {
+      const chunk = unique.slice(i, i + 1000);
+      const res = await fetch(
+        'https://esi.evetech.net/latest/universe/names/?datasource=tranquility',
+        {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(chunk)
+        }
+      );
+      if (!res.ok) continue;
+      const rows = await res.json();
+      for (const row of rows || []) {
+        if (row && row.id != null && row.name) out[Number(row.id)] = String(row.name);
+      }
+    }
+    return out;
+  }
+
   global.EveIndustryCore = {
     HUBS,
     STRUCTURE_PRESETS,
@@ -617,6 +640,7 @@
     fetchCharacterIndustryJobs,
     resolveLocationRef,
     resolveLocationNames,
-    aggregateAssetsByType
+    aggregateAssetsByType,
+    fetchUniverseNames
   };
 })(window);
