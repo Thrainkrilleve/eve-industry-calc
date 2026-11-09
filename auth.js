@@ -45,10 +45,20 @@
   }
 
   function getClientId() {
-    try { return localStorage.getItem(CLIENT_ID_KEY) || ''; } catch { return ''; }
+    // Dev override (localStorage) wins, then committed config.js
+    try {
+      const override = localStorage.getItem(CLIENT_ID_KEY);
+      if (override && override.trim()) return override.trim();
+    } catch {}
+    const cfg = global.EVE_INDUSTRY_CONFIG || {};
+    return (cfg.clientId || '').trim();
   }
   function setClientId(id) {
-    try { localStorage.setItem(CLIENT_ID_KEY, (id || '').trim()); } catch {}
+    try {
+      const v = (id || '').trim();
+      if (!v) localStorage.removeItem(CLIENT_ID_KEY);
+      else localStorage.setItem(CLIENT_ID_KEY, v);
+    } catch {}
   }
 
   function loadAuth() {

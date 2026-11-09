@@ -4,12 +4,13 @@ Client-side industry planner: SDE reactions + manufacturing, invention/T2, make-
 
 **Live (GitHub Pages):** https://thrainkrilleve.github.io/eve-industry-calc/
 
-## Quick start
+## Quick start (players)
 
-1. Open the Pages URL (or `index.html` locally)
-2. Create an EVE SSO app — see [SETUP-EVE-APP.md](SETUP-EVE-APP.md)
-3. Paste Client ID → **Login with EVE**
-4. Optional: add alliance structure IDs for citadel market prices
+1. Open https://thrainkrilleve.github.io/eve-industry-calc/
+2. **Login with EVE**
+3. Optional: add alliance structure IDs for citadel market prices
+
+Developer SSO setup (Client ID / callback) is hidden from the main UI — see [SETUP-EVE-APP.md](SETUP-EVE-APP.md) and `config.js`. Open `?dev=1` for local overrides.
 
 ## Features
 

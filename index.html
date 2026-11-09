@@ -143,6 +143,29 @@
   }
   .icon-btn:hover { color: var(--danger); border-color: var(--danger); }
   .profit-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .dev-only { display: none; }
+  body.dev .dev-only { display: block; }
+  .site-footer {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .site-footer button {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 400;
+    cursor: pointer;
+    text-decoration: underline;
+  }
   @media (max-width: 1100px) { .three-col { grid-template-columns: 1fr; } }
   @media (max-width: 980px) { .add-form { grid-template-columns: 1fr; } }
 </style>
@@ -239,20 +262,11 @@
   </div>
 
   <div class="panel">
-    <h2>Alliance / Player Structure Markets</h2>
+    <h2>Alliance Structure Markets</h2>
     <p class="muted" style="margin-top:0;font-size:13px;">
-      Add Upwell structures your character can dock at. Prefer <strong>Login with EVE</strong> (PKCE) so structure orders use your SSO token.
-      Fallback: paste a temporary access token. See <code>SETUP-EVE-APP.md</code> for creating the EVE developer application.
+      Log in with EVE, then add structures you can dock at. Select a structure as the market hub and refresh prices.
     </p>
     <div class="settings-grid">
-      <div>
-        <label>EVE SSO Client ID</label>
-        <input type="text" id="eveClientIdInput" placeholder="From developers.eveonline.com">
-      </div>
-      <div>
-        <label>Callback URL (register exactly)</label>
-        <input type="text" id="eveCallbackDisplay" readonly>
-      </div>
       <div>
         <label>Structure ID</label>
         <input type="text" id="structureIdInput" placeholder="e.g. 1030049082711">
@@ -261,20 +275,42 @@
         <label>Display name</label>
         <input type="text" id="structureNameInput" placeholder="Alliance Keepstar Market">
       </div>
-      <div class="full" style="grid-column:1/-1;">
-        <label>Manual ESI token fallback (optional if logged in)</label>
-        <textarea id="esiTokenInput" rows="2" placeholder="Only needed if not using Login with EVE"></textarea>
-      </div>
     </div>
     <div class="row" style="margin-top:12px;">
-      <button type="button" onclick="saveEveClientId()">Save Client ID</button>
       <button type="button" onclick="addCustomStructure()">Add structure</button>
-      <button type="button" class="ghost" onclick="saveEsiToken()">Save manual token</button>
-      <button type="button" class="ghost" onclick="clearEsiToken()">Clear manual token</button>
       <button type="button" class="secondary" onclick="resolveStructureName()">Lookup name</button>
       <span id="structureStatus" class="muted"></span>
     </div>
     <div id="customStructureList" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="panel dev-only" id="devPanel">
+    <h2>Developer settings</h2>
+    <p class="muted" style="margin-top:0;font-size:13px;">
+      Hidden from normal users. Open with <code>?dev=1</code> or the footer toggle.
+      Prefer committing Client ID in <code>config.js</code> for production.
+    </p>
+    <div class="settings-grid">
+      <div>
+        <label>EVE SSO Client ID (local override)</label>
+        <input type="text" id="eveClientIdInput" placeholder="From developers.eveonline.com">
+      </div>
+      <div>
+        <label>Callback URL (register exactly)</label>
+        <input type="text" id="eveCallbackDisplay" readonly>
+      </div>
+      <div class="full" style="grid-column:1/-1;">
+        <label>Manual ESI token fallback</label>
+        <textarea id="esiTokenInput" rows="2" placeholder="Only for debugging without SSO"></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button type="button" onclick="saveEveClientId()">Save Client ID override</button>
+      <button type="button" class="ghost" onclick="saveEsiToken()">Save manual token</button>
+      <button type="button" class="ghost" onclick="clearEsiToken()">Clear manual token</button>
+      <button type="button" class="ghost" onclick="copyCallbackUrl()">Copy callback URL</button>
+      <span id="devStatus" class="muted"></span>
+    </div>
   </div>
 
   <div class="panel">
@@ -432,8 +468,14 @@
     </div>
     <div id="knownList"></div>
   </div>
+
+  <div class="site-footer">
+    <span>EVE Industry Calculator · client-side</span>
+    <button type="button" id="devToggleBtn" onclick="toggleDevMode()">Developer settings</button>
+  </div>
 </div>
 
+<script src="config.js"></script>
 <script src="eve-industry-data.js"></script>
 <script src="industry-core.js"></script>
 <script src="auth.js"></script>
@@ -446,6 +488,7 @@ const MODES_KEY = 'eveIndustryModes_v1';
 const STRUCTURES_KEY = 'eveIndustryStructures_v1';
 const ESI_TOKEN_KEY = 'eveIndustryEsiToken_v1';
 const INVENTION_KEY = 'eveIndustryInvention_v1';
+const DEV_KEY = 'eveIndustryDev_v1';
 const Core = window.EveIndustryCore;
 
 let SDE = null;
@@ -576,19 +619,57 @@ function getEsiToken() {
   return (document.getElementById('esiTokenInput').value || safeGet(ESI_TOKEN_KEY, '') || '').trim();
 }
 
+function isDevMode() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('dev') === '1' || params.get('dev') === 'true') return true;
+  if ((window.location.hash || '').replace(/^#/, '') === 'dev') return true;
+  return !!safeGet(DEV_KEY, false);
+}
+
+function applyDevMode(on) {
+  document.body.classList.toggle('dev', !!on);
+  const btn = document.getElementById('devToggleBtn');
+  if (btn) btn.textContent = on ? 'Hide developer settings' : 'Developer settings';
+  if (on) refreshAuthUi();
+}
+
+function toggleDevMode() {
+  const next = !document.body.classList.contains('dev');
+  safeSet(DEV_KEY, next);
+  // Keep URL clean for normal users; only add ?dev=1 when enabling via footer.
+  const url = new URL(window.location.href);
+  if (next) url.searchParams.set('dev', '1');
+  else {
+    url.searchParams.delete('dev');
+    if (url.hash === '#dev') url.hash = '';
+  }
+  window.history.replaceState({}, document.title, url.toString());
+  applyDevMode(next);
+}
+
+function copyCallbackUrl() {
+  const url = EveAuth.redirectUri();
+  navigator.clipboard.writeText(url).then(
+    () => { document.getElementById('devStatus').innerHTML = '<span class="status-ok">Callback copied.</span>'; },
+    () => prompt('Callback URL:', url)
+  );
+}
+
 function saveEveClientId() {
   const id = document.getElementById('eveClientIdInput').value.trim();
   EveAuth.setClientId(id);
-  document.getElementById('structureStatus').innerHTML = id
-    ? '<span class="status-ok">Client ID saved.</span> Register callback: ' + EveAuth.redirectUri()
-    : '<span class="muted">Client ID cleared.</span>';
+  document.getElementById('devStatus').innerHTML = id
+    ? '<span class="status-ok">Local Client ID override saved.</span>'
+    : '<span class="muted">Override cleared — using config.js</span>';
   refreshAuthUi();
 }
 
 async function eveLogin() {
   try {
-    const id = document.getElementById('eveClientIdInput').value.trim();
-    if (id) EveAuth.setClientId(id);
+    if (!EveAuth.getClientId()) {
+      alert('EVE login is not configured yet. Ask a developer to set clientId in config.js (or open Developer settings).');
+      return;
+    }
     await EveAuth.beginLogin();
   } catch (err) {
     alert(err.message);
@@ -602,15 +683,28 @@ function refreshAuthUi() {
   const status = document.getElementById('authStatus');
   const loginBtn = document.getElementById('eveLoginBtn');
   const logoutBtn = document.getElementById('eveLogoutBtn');
-  document.getElementById('eveCallbackDisplay').value = EveAuth.redirectUri();
-  document.getElementById('eveClientIdInput').value = EveAuth.getClientId();
+  const cb = document.getElementById('eveCallbackDisplay');
+  const cid = document.getElementById('eveClientIdInput');
+  if (cb) cb.value = EveAuth.redirectUri();
+  if (cid && document.body.classList.contains('dev')) {
+    // Show override if present, else configured id
+    try {
+      const override = localStorage.getItem('eveIndustryClientId_v1') || '';
+      cid.value = override || EveAuth.getClientId();
+      cid.placeholder = (window.EVE_INDUSTRY_CONFIG && window.EVE_INDUSTRY_CONFIG.clientId)
+        ? 'Override config.js Client ID'
+        : 'From developers.eveonline.com';
+    } catch {
+      cid.value = EveAuth.getClientId();
+    }
+  }
   if (EveAuth.isLoggedIn()) {
     const c = EveAuth.character();
     status.innerHTML = `<span class="status-ok">Logged in:</span> ${c && c.name ? c.name : 'Capsuleer'}`;
     loginBtn.hidden = true;
     logoutBtn.hidden = false;
   } else {
-    status.textContent = 'Not logged in';
+    status.textContent = EveAuth.getClientId() ? 'Not logged in' : 'Login not configured';
     loginBtn.hidden = false;
     logoutBtn.hidden = true;
   }
@@ -618,13 +712,13 @@ function refreshAuthUi() {
 function saveEsiToken() {
   const token = document.getElementById('esiTokenInput').value.trim();
   safeSet(ESI_TOKEN_KEY, token);
-  document.getElementById('structureStatus').innerHTML =
-    token ? '<span class="status-ok">Token saved locally.</span>' : '<span class="muted">Token cleared.</span>';
+  document.getElementById('devStatus').innerHTML =
+    token ? '<span class="status-ok">Manual token saved locally.</span>' : '<span class="muted">Token cleared.</span>';
 }
 function clearEsiToken() {
   document.getElementById('esiTokenInput').value = '';
   safeSet(ESI_TOKEN_KEY, '');
-  document.getElementById('structureStatus').textContent = 'Token cleared.';
+  document.getElementById('devStatus').textContent = 'Manual token cleared.';
 }
 function loadStructures() {
   customStructures = safeGet(STRUCTURES_KEY, []) || [];
@@ -1820,23 +1914,25 @@ function verifyCorrections() {
 async function init() {
   const status = document.getElementById('loadStatus');
   if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore || !window.EveAuth) {
-    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data, industry-core.js, and auth.js next to index.html.</span>';
+    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data, industry-core.js, auth.js, and config.js next to index.html.</span>';
     return;
   }
 
-  // Handle OAuth redirect before wiping URL params in the rest of init.
+  // Preserve OAuth ?code= handling before toggling other query params.
+  const isOauthReturn = !!(new URLSearchParams(window.location.search).get('code'));
+  applyDevMode(!isOauthReturn && isDevMode());
+
   try {
     const handled = await EveAuth.handleRedirectCallback();
     if (handled) {
       document.getElementById('structureStatus').innerHTML =
-        '<span class="status-ok">EVE login complete.</span> Structure markets can use this session.';
+        '<span class="status-ok">EVE login complete.</span>';
     }
   } catch (err) {
     document.getElementById('structureStatus').innerHTML =
       `<span class="status-bad">EVE login failed:</span> ${err.message}`;
   }
   await EveAuth.refreshIfNeeded();
-  refreshAuthUi();
 
   SDE = window.EVE_INDUSTRY_SDE;
   customRecipes = safeGet(STORAGE_KEY, []);
@@ -1860,7 +1956,11 @@ async function init() {
     <div class="stat"><b>${(SDE.inventionCount || 0).toLocaleString()}</b>invention paths</div>
     <div class="stat"><b>${SDE.typeCount.toLocaleString()}</b>types named</div>
   `;
-  status.innerHTML = `<span class="status-ok">SDE loaded.</span> <span class="muted">${verifyCorrections()}</span>`;
+  const checks = verifyCorrections();
+  status.innerHTML = document.body.classList.contains('dev')
+    ? `<span class="status-ok">SDE loaded.</span> <span class="muted">${checks}</span>`
+    : `<span class="status-ok">Ready.</span> <span class="muted">${SDE.recipeCount.toLocaleString()} recipes loaded.</span>`;
+  if (document.body.classList.contains('dev')) console.info('[eve-industry] formula checks:', checks);
 
   const saved = safeGet(SELECTED_KEY, 'Tungsten Carbide');
   if (findReactionByOutput(saved)) {
