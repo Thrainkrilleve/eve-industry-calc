@@ -1,6 +1,6 @@
 # EVE Online Industry Calculator
 
-Client-side calculator for **all SDE reactions and manufacturing** (moon goo, composites, ships, modules, etc.).
+Client-side calculator for **all SDE reactions and manufacturing**, plus **invention / T2** planning.
 
 Core math lives in `industry-core.js` so it can later move into an **Alliance Auth** Django app.
 
@@ -10,19 +10,32 @@ Open `index.html` in a browser (keep `eve-industry-data.js` and `industry-core.j
 
 Needs network access for:
 
-- Fuzzwork market aggregates
-- ESI adjusted prices + system cost indices (`Load SCI + adjusted prices`)
+- Fuzzwork region market aggregates
+- ESI adjusted prices + system cost indices
+- ESI structure markets (optional — requires your access token)
 
 ## Features
 
 - Full CCP SDE recipe set (reactions + manufacturing)
+- **Invention / T2**: outcomes, decryptors, skill levels, expected jobs/cost, invented ME/TE/runs
 - Clickable build tree → **selection board** with editable job quantities
-- **Make vs buy** per intermediate (manual Build/Buy chip, or **Auto make-vs-buy**)
-- ME / TE + structure presets (Raitaru, Azbel, Sotiyo, Athanor, Tatara, NPC)
-- Hub market prices (Jita / Amarr / Dodixie / Rens / Hek)
-- Job install fees: system cost index, structure role bonus, facility tax, SCC surcharge
-- Material cost, job fees, output value, profit
+- **Make vs buy** per intermediate (manual or auto)
+- ME / TE + structure presets
+- Region hubs (Jita / Amarr / Dodixie / Rens / Hek)
+- **Player-owned structure markets** via ESI token (`esi-markets.structure_markets.v1`)
+- Job install fees: SCI, role bonus, facility tax, SCC
 - Multibuy copy (`Item<TAB>Qty`)
+
+## Structure markets (alliances)
+
+1. Paste an ESI **access token** for a character that can dock at the citadel  
+   Scope needed: `esi-markets.structure_markets.v1`  
+   Optional for name lookup: `esi-universe.read_structures.v1`
+2. Add Structure ID + display name
+3. Select that structure as **Market hub**
+4. Click **Refresh market prices**
+
+Token is stored only in this browser’s `localStorage`. When this becomes an Alliance Auth app, SSO can replace the paste box.
 
 ## Rebuild data from CCP SDE
 
@@ -37,12 +50,11 @@ python build_sde_data.py
 | File | Role |
 |------|------|
 | `index.html` | UI |
-| `industry-core.js` | Shared math + market/ESI helpers |
-| `eve-industry-data.js` | Compact SDE recipes/names |
+| `industry-core.js` | Shared math + market/ESI/invention helpers |
+| `eve-industry-data.js` | Compact SDE recipes, inventions, decryptors |
 | `build_sde_data.py` | Regenerates data from CCP JSONL |
 
-## Next up
+## Next up (parked)
 
-- Invention / T2 decryptors
 - GitHub Pages deploy
-- Alliance Auth app packaging
+- Alliance Auth app packaging (SSO for structure markets)

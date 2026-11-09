@@ -2,7 +2,9 @@
   "recipeCount": 4967,
   "reactions": 120,
   "manufacturing": 4850,
-  "typeCount": 5601,
+  "inventionCount": 1352,
+  "decryptorCount": 8,
+  "typeCount": 10769,
   "baseMaterialCount": 661,
-  "jsBytes": 853959
+  "jsBytes": 1330069
 }

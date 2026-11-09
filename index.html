@@ -150,7 +150,7 @@
 <body>
 <div class="container">
   <h1>EVE Online Industry Calculator</h1>
-  <p class="sub">SDE reactions + manufacturing · selection board · make-vs-buy · hub prices · job fees (SCI / SCC / tax).</p>
+  <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · job fees.</p>
 
   <div class="panel" id="loadPanel">
     <div class="row"><span id="loadStatus">Loading SDE industry data…</span></div>
@@ -230,6 +230,37 @@
   </div>
 
   <div class="panel">
+    <h2>Alliance / Player Structure Markets</h2>
+    <p class="muted" style="margin-top:0;font-size:13px;">
+      Add Upwell structures your character can dock at. Prices use ESI
+      <code>/markets/structures/{id}/</code> with a local access token
+      (<code>esi-markets.structure_markets.v1</code>). Token stays in this browser only — replace with Alliance Auth SSO later.
+    </p>
+    <div class="settings-grid">
+      <div>
+        <label>Structure ID</label>
+        <input type="text" id="structureIdInput" placeholder="e.g. 1030049082711">
+      </div>
+      <div>
+        <label>Display name</label>
+        <input type="text" id="structureNameInput" placeholder="Alliance Keepstar Market">
+      </div>
+      <div class="full" style="grid-column:1/-1;">
+        <label>ESI access token (Bearer, local only)</label>
+        <textarea id="esiTokenInput" rows="2" placeholder="Paste access token with structure_markets scope"></textarea>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button type="button" onclick="addCustomStructure()">Add structure</button>
+      <button type="button" class="ghost" onclick="saveEsiToken()">Save token</button>
+      <button type="button" class="ghost" onclick="clearEsiToken()">Clear token</button>
+      <button type="button" class="secondary" onclick="resolveStructureName()">Lookup name</button>
+      <span id="structureStatus" class="muted"></span>
+    </div>
+    <div id="customStructureList" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="panel">
     <h2>Calculator</h2>
     <div class="pill-row" id="activityPills">
       <button type="button" class="pill active" data-activity="all">All</button>
@@ -252,6 +283,46 @@
     <div id="selectedMeta" class="muted"></div>
     <div id="timeEstimate" class="muted" style="margin-top:8px;"></div>
     <div class="profit-bar" id="rootProfit"></div>
+  </div>
+
+  <div class="panel" id="inventionPanel" hidden>
+    <h2>Invention / T2</h2>
+    <p class="muted" style="margin-top:0;font-size:13px;">
+      Invent T2 BPCs from the matching T1 blueprint, optionally with a decryptor.
+      Enable “Include invention” to fold expected datacore/decryptor cost and invented ME/TE into the build.
+    </p>
+    <div class="settings-grid">
+      <div>
+        <label>Invention outcome</label>
+        <select id="inventionSelect"></select>
+      </div>
+      <div>
+        <label>Decryptor</label>
+        <select id="decryptorSelect"></select>
+      </div>
+      <div>
+        <label>Encryption skill</label>
+        <input type="number" id="encSkill" value="4" min="0" max="5" step="1">
+      </div>
+      <div>
+        <label>Science skill 1</label>
+        <input type="number" id="sciSkill1" value="5" min="0" max="5" step="1">
+      </div>
+      <div>
+        <label>Science skill 2</label>
+        <input type="number" id="sciSkill2" value="5" min="0" max="5" step="1">
+      </div>
+      <div>
+        <label>Include invention in build</label>
+        <select id="includeInvention">
+          <option value="0">No — manufacture only</option>
+          <option value="1">Yes — expected invention cost</option>
+        </select>
+      </div>
+    </div>
+    <div id="inventionSkillLabels" class="muted" style="margin-top:8px;font-size:13px;"></div>
+    <div id="inventionSummary" style="margin-top:12px;"></div>
+    <div class="profit-bar" id="inventionProfit"></div>
   </div>
 
   <div class="panel">
@@ -354,12 +425,17 @@ const SELECTED_KEY = 'eveIndustrySelected_v2';
 const BOARD_KEY = 'eveIndustryBoard_v1';
 const SETTINGS_KEY = 'eveIndustrySettings_v2';
 const MODES_KEY = 'eveIndustryModes_v1';
+const STRUCTURES_KEY = 'eveIndustryStructures_v1';
+const ESI_TOKEN_KEY = 'eveIndustryEsiToken_v1';
+const INVENTION_KEY = 'eveIndustryInvention_v1';
 const Core = window.EveIndustryCore;
 
 let SDE = null;
 let recipeIndex = new Map();
 let productMeta = new Map();
 let nameToTypeId = new Map();
+/** itemTypeId -> invention rows */
+let inventionsByItem = new Map();
 let customRecipes = [];
 let selectedProduct = '';
 let activityFilter = 'all';
@@ -369,9 +445,12 @@ let suggestionIndex = -1;
 let selectionBoard = new Map();
 /** @type {Map<string, 'build'|'buy'>} */
 let buildModes = new Map();
+/** @type {Array<{id:number, name:string}>} */
+let customStructures = [];
 let currentTree = null;
 let lastFullReqs = {};
 let lastSelectionReqs = {};
+let lastInventionExpect = null;
 let priceCache = {};
 let adjustedPrices = {};
 let priceFetchToken = 0;
@@ -444,6 +523,7 @@ function rebuildIndex() {
   recipeIndex = new Map();
   productMeta = new Map();
   nameToTypeId = new Map();
+  inventionsByItem = new Map();
   if (SDE) {
     for (const [id, name] of Object.entries(SDE.names)) {
       nameToTypeId.set(name.toLowerCase(), Number(id));
@@ -456,6 +536,10 @@ function rebuildIndex() {
         productMeta.set(key, calc);
       }
     }
+    for (const inv of SDE.inventions || []) {
+      if (!inventionsByItem.has(inv.item)) inventionsByItem.set(inv.item, []);
+      inventionsByItem.get(inv.item).push(inv);
+    }
   }
   for (const custom of customRecipes) {
     const calc = normalizeRecipe(custom, true);
@@ -463,6 +547,267 @@ function rebuildIndex() {
     recipeIndex.set(key, calc);
     productMeta.set(key, calc);
   }
+}
+
+function getEsiToken() {
+  return (document.getElementById('esiTokenInput').value || safeGet(ESI_TOKEN_KEY, '') || '').trim();
+}
+function saveEsiToken() {
+  const token = document.getElementById('esiTokenInput').value.trim();
+  safeSet(ESI_TOKEN_KEY, token);
+  document.getElementById('structureStatus').innerHTML =
+    token ? '<span class="status-ok">Token saved locally.</span>' : '<span class="muted">Token cleared.</span>';
+}
+function clearEsiToken() {
+  document.getElementById('esiTokenInput').value = '';
+  safeSet(ESI_TOKEN_KEY, '');
+  document.getElementById('structureStatus').textContent = 'Token cleared.';
+}
+function loadStructures() {
+  customStructures = safeGet(STRUCTURES_KEY, []) || [];
+  document.getElementById('esiTokenInput').value = safeGet(ESI_TOKEN_KEY, '') || '';
+  renderCustomStructures();
+  refreshHubSelect();
+}
+function saveStructures() {
+  safeSet(STRUCTURES_KEY, customStructures);
+  refreshHubSelect();
+  renderCustomStructures();
+}
+function addCustomStructure() {
+  const id = Number(String(document.getElementById('structureIdInput').value).trim());
+  let name = document.getElementById('structureNameInput').value.trim();
+  if (!Number.isFinite(id) || id <= 0) return alert('Enter a valid structure ID.');
+  if (!name) name = 'Structure ' + id;
+  customStructures = customStructures.filter((s) => s.id !== id);
+  customStructures.push({ id, name });
+  saveStructures();
+  document.getElementById('hubSelect').value = 'struct:' + id;
+  document.getElementById('structureStatus').innerHTML =
+    `<span class="status-ok">Added</span> ${name} (${id}) — select it as market hub and refresh prices.`;
+}
+function removeCustomStructure(id) {
+  customStructures = customStructures.filter((s) => s.id !== Number(id));
+  saveStructures();
+}
+function renderCustomStructures() {
+  const div = document.getElementById('customStructureList');
+  if (!customStructures.length) {
+    div.innerHTML = '<p class="empty-state">No player structures added yet.</p>';
+    return;
+  }
+  div.innerHTML = customStructures.map((s) =>
+    `<span class="tag">${s.name} <span class="muted">#${s.id}</span>
+      <button type="button" class="icon-btn" onclick="removeCustomStructure(${s.id})">×</button></span>`
+  ).join('');
+}
+async function resolveStructureName() {
+  const id = Number(String(document.getElementById('structureIdInput').value).trim());
+  const token = getEsiToken();
+  if (!id) return alert('Enter a structure ID first.');
+  if (!token) return alert('Save an ESI access token first (needs universe.read_structures for name lookup).');
+  document.getElementById('structureStatus').textContent = 'Looking up structure name…';
+  try {
+    const name = await Core.fetchStructureName(id, token);
+    if (!name) {
+      document.getElementById('structureStatus').innerHTML =
+        '<span class="status-bad">Name lookup failed</span> — enter a display name manually (token may lack universe.read_structures).';
+      return;
+    }
+    document.getElementById('structureNameInput').value = name;
+    document.getElementById('structureStatus').innerHTML = `<span class="status-ok">Found:</span> ${name}`;
+  } catch (err) {
+    document.getElementById('structureStatus').innerHTML =
+      `<span class="status-bad">Lookup failed:</span> ${err.message}`;
+  }
+}
+function refreshHubSelect() {
+  const hubSelect = document.getElementById('hubSelect');
+  const current = hubSelect.value;
+  let html = Object.entries(Core.HUBS)
+    .map(([k, v]) => `<option value="${k}">${v.name} (region)</option>`).join('');
+  for (const s of customStructures) {
+    html += `<option value="struct:${s.id}">${s.name} (structure)</option>`;
+  }
+  hubSelect.innerHTML = html;
+  if ([...hubSelect.options].some((o) => o.value === current)) hubSelect.value = current;
+}
+function selectedMarket() {
+  const val = document.getElementById('hubSelect').value || 'jita';
+  if (val.startsWith('struct:')) {
+    const id = Number(val.slice(7));
+    const row = customStructures.find((s) => s.id === id);
+    return { kind: 'structure', id, name: row ? row.name : 'Structure ' + id };
+  }
+  const hub = Core.HUBS[val] || Core.HUBS.jita;
+  return { kind: 'region', key: val, id: hub.id, systemId: hub.systemId, name: hub.name };
+}
+
+function inventionsForProduct(itemName) {
+  const tid = nameToTypeId.get((itemName || '').toLowerCase());
+  if (!tid) return [];
+  return inventionsByItem.get(tid) || [];
+}
+
+function selectedDecryptor() {
+  const id = Number(document.getElementById('decryptorSelect').value);
+  if (!id) return null;
+  return (SDE.decryptors || []).find((d) => d.id === id) || null;
+}
+
+function selectedInvention() {
+  const key = document.getElementById('inventionSelect').value;
+  if (!key) return null;
+  const [src, out] = key.split(':').map(Number);
+  const list = inventionsForProduct(selectedProduct);
+  return list.find((i) => i.src === src && i.out === out) || null;
+}
+
+function populateDecryptors() {
+  const sel = document.getElementById('decryptorSelect');
+  const saved = safeGet(INVENTION_KEY, {});
+  sel.innerHTML = '<option value="0">None</option>' +
+    (SDE.decryptors || []).map((d) =>
+      `<option value="${d.id}">${d.n} (${d.p}x · ME${d.me >= 0 ? '+' : ''}${d.me} · TE${d.te >= 0 ? '+' : ''}${d.te} · runs${d.runs >= 0 ? '+' : ''}${d.runs})</option>`
+    ).join('');
+  if (saved.decryptorId) sel.value = String(saved.decryptorId);
+}
+
+function populateInventionOutcomes(itemName) {
+  const panel = document.getElementById('inventionPanel');
+  const sel = document.getElementById('inventionSelect');
+  const list = inventionsForProduct(itemName);
+  if (!list.length) {
+    panel.hidden = true;
+    lastInventionExpect = null;
+    return;
+  }
+  panel.hidden = false;
+  sel.innerHTML = list.map((inv) => {
+    const srcName = typeName(inv.src);
+    const outName = typeName(inv.out);
+    return `<option value="${inv.src}:${inv.out}">${outName} ← ${srcName} (${(inv.chance * 100).toFixed(0)}% base)</option>`;
+  }).join('');
+  const saved = safeGet(INVENTION_KEY, {});
+  if (saved.outcome && [...sel.options].some((o) => o.value === saved.outcome)) {
+    sel.value = saved.outcome;
+  }
+  updateInventionSkillLabels();
+  renderInventionSummary();
+}
+
+function updateInventionSkillLabels() {
+  const inv = selectedInvention();
+  const box = document.getElementById('inventionSkillLabels');
+  if (!inv) {
+    box.textContent = '';
+    return;
+  }
+  const classified = Core.classifyInventionSkills(inv.skills, typeName);
+  box.innerHTML =
+    `Skills: <strong>${classified.encryption.name}</strong> · ` +
+    `<strong>${classified.science[0].name}</strong> · ` +
+    `<strong>${classified.science[1].name}</strong>`;
+}
+
+function currentInventionExpectation(manufactureQty) {
+  const inv = selectedInvention();
+  if (!inv) return null;
+  const decryptor = selectedDecryptor();
+  const materials = inv.m.map(([tid, qty]) => ({ item: typeName(tid), qty, typeID: tid }));
+  if (decryptor) {
+    // decryptor consumed each job — tracked separately
+  }
+  return Core.inventionExpectation({
+    baseChance: inv.chance,
+    baseRuns: inv.baseRuns,
+    skillLevels: {
+      encryption: parseFloat(document.getElementById('encSkill').value) || 0,
+      science1: parseFloat(document.getElementById('sciSkill1').value) || 0,
+      science2: parseFloat(document.getElementById('sciSkill2').value) || 0
+    },
+    decryptorMult: decryptor ? decryptor.p : 1,
+    decryptor,
+    decryptorItem: decryptor ? typeName(decryptor.id) : null,
+    materials,
+    manufactureRuns: manufactureQty
+  });
+}
+
+function renderInventionSummary() {
+  const qty = parseFloat(document.getElementById('desiredQty').value) || 1;
+  const expect = currentInventionExpectation(qty);
+  lastInventionExpect = expect;
+  const div = document.getElementById('inventionSummary');
+  const profitEl = document.getElementById('inventionProfit');
+  if (!expect) {
+    div.innerHTML = '';
+    profitEl.innerHTML = '';
+    return;
+  }
+  const decryptor = selectedDecryptor();
+  safeSet(INVENTION_KEY, {
+    outcome: document.getElementById('inventionSelect').value,
+    decryptorId: decryptor ? decryptor.id : 0,
+    include: document.getElementById('includeInvention').value,
+    enc: document.getElementById('encSkill').value,
+    s1: document.getElementById('sciSkill1').value,
+    s2: document.getElementById('sciSkill2').value
+  });
+
+  let matCost = 0;
+  let missing = 0;
+  for (const m of expect.expectedMaterials) {
+    const p = unitPrice(m.item);
+    if (p == null) missing += 1;
+    else matCost += p * m.qty;
+  }
+  if (expect.decryptorPerJob) {
+    const p = unitPrice(expect.decryptorPerJob);
+    if (p == null) missing += 1;
+    else matCost += p * expect.expectedDecryptors;
+  }
+
+  div.innerHTML = `
+    <table>
+      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Success chance</td><td class="qty">${(expect.chance * 100).toFixed(2)}%</td></tr>
+        <tr><td>Invented BPC</td><td>ME ${expect.bpc.me} · TE ${expect.bpc.te} · ${expect.bpc.runs} runs</td></tr>
+        <tr><td>BPCs needed for qty</td><td class="qty">${expect.bpcsNeeded}</td></tr>
+        <tr><td>Expected invention jobs</td><td class="qty">${Number.isFinite(expect.expectedJobs) ? expect.expectedJobs.toFixed(2) : '∞'}</td></tr>
+        <tr><td>Expected invent cost</td><td class="isk">${formatIsk(matCost)}${missing ? ' <span class="muted">(+ missing prices)</span>' : ''}</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="font-size:13px;">Per successful BPC you get ${expect.bpc.runs} manufacturing run(s) at ME ${expect.bpc.me} / TE ${expect.bpc.te}.</p>
+  `;
+  profitEl.innerHTML = `
+    <div class="stat"><b>${(expect.chance * 100).toFixed(1)}%</b>chance</div>
+    <div class="stat"><b>${formatIsk(matCost)}</b>expected invent ISK</div>
+    <div class="stat"><b>${expect.bpc.runs}</b>runs / BPC</div>
+    <div class="stat"><b>ME ${expect.bpc.me}</b>invented ME</div>
+  `;
+}
+
+function inventionMaterialsForBuild(qty) {
+  if (document.getElementById('includeInvention').value !== '1') return { mats: {}, meOverride: null, teOverride: null, inventCost: 0 };
+  const expect = currentInventionExpectation(qty);
+  if (!expect) return { mats: {}, meOverride: null, teOverride: null, inventCost: 0 };
+  const mats = {};
+  for (const m of expect.expectedMaterials) mats[m.item] = (mats[m.item] || 0) + m.qty;
+  if (expect.decryptorPerJob) mats[expect.decryptorPerJob] = (mats[expect.decryptorPerJob] || 0) + expect.expectedDecryptors;
+  let inventCost = 0;
+  for (const [item, q] of Object.entries(mats)) {
+    const p = unitPrice(item);
+    if (p != null) inventCost += p * q;
+  }
+  return {
+    mats,
+    meOverride: expect.bpc.me,
+    teOverride: expect.bpc.te,
+    inventCost,
+    expect
+  };
 }
 
 function findReactionByOutput(itemName) {
@@ -522,23 +867,40 @@ function currentSettings() {
     scc: parseFloat(document.getElementById('sccInput').value) || 0
   };
 }
+
+function effectiveMeTe(qty) {
+  const inv = inventionMaterialsForBuild(qty);
+  const s = currentSettings();
+  return {
+    me: inv.meOverride != null ? inv.meOverride : s.me,
+    te: inv.teOverride != null ? inv.teOverride : s.te,
+    inventMats: inv.mats,
+    inventCost: inv.inventCost || 0
+  };
+}
 function saveSettings() {
   safeSet(SETTINGS_KEY, currentSettings());
 }
 function loadSettings() {
+  refreshHubSelect();
   const hubSelect = document.getElementById('hubSelect');
-  hubSelect.innerHTML = Object.entries(Core.HUBS)
-    .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
   const structSelect = document.getElementById('structurePreset');
   structSelect.innerHTML = Object.entries(Core.STRUCTURE_PRESETS)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
 
   const s = safeGet(SETTINGS_KEY, null);
+  const inv = safeGet(INVENTION_KEY, {});
+  if (inv.enc != null) document.getElementById('encSkill').value = inv.enc;
+  if (inv.s1 != null) document.getElementById('sciSkill1').value = inv.s1;
+  if (inv.s2 != null) document.getElementById('sciSkill2').value = inv.s2;
+  if (inv.include != null) document.getElementById('includeInvention').value = inv.include;
+
   if (!s) {
     applyStructurePreset('npc', true);
     return;
   }
-  hubSelect.value = s.hub || 'jita';
+  if ([...hubSelect.options].some((o) => o.value === s.hub)) hubSelect.value = s.hub;
+  else hubSelect.value = 'jita';
   document.getElementById('priceSide').value = s.priceSide || 'sell';
   structSelect.value = s.structure || 'npc';
   document.getElementById('meInput').value = s.me ?? 10;
@@ -565,12 +927,17 @@ function applyStructurePreset(key, writeFields = true) {
   document.getElementById('facilityTax').value = preset.facilityTax;
 }
 
-function resolveOpts() {
+function resolveOpts(meOverride = null) {
   const s = currentSettings();
+  const include = document.getElementById('includeInvention') &&
+    document.getElementById('includeInvention').value === '1';
+  let me = s.me;
+  if (include && meOverride != null) me = meOverride;
+  else if (include && lastInventionExpect) me = lastInventionExpect.bpc.me;
   return {
     findRecipe: findReactionByOutput,
     modeFor: (name) => getMode(name),
-    me: s.me,
+    me,
     mfgMatMult: s.mfgMatMult,
     rxnMatMult: s.rxnMatMult,
     mfgSci: s.mfgSci,
@@ -606,10 +973,11 @@ function costOfRequirements(reqs) {
   return { total, missing };
 }
 
-function getChainTree(item, qty, depth = 0, maxDepth = 6) {
+function getChainTree(item, qty, depth = 0, maxDepth = 6, meTe = null) {
   const reaction = findReactionByOutput(item);
   const mode = getMode(item);
   const s = currentSettings();
+  const eff = meTe || { me: s.me, te: s.te };
   if (!reaction || mode === 'buy' || depth >= maxDepth) {
     return {
       item,
@@ -621,12 +989,14 @@ function getChainTree(item, qty, depth = 0, maxDepth = 6) {
   }
   const runs = Core.jobRuns(reaction.output.qty, qty);
   const isReaction = reaction.activity === 'r';
-  const me = isReaction ? 0 : s.me;
+  // Invented ME/TE applies to the root manufactured product only.
+  const me = isReaction ? 0 : (depth === 0 ? eff.me : s.me);
+  const te = isReaction ? 0 : (depth === 0 ? eff.te : s.te);
   const matMult = isReaction ? s.rxnMatMult : s.mfgMatMult;
   const timeMult = isReaction ? s.rxnTimeMult : s.mfgTimeMult;
   const children = reaction.inputs.map(inp => {
     const needed = Core.materialNeeded(inp.qty, runs, me, matMult);
-    return getChainTree(inp.item, needed, depth + 1, maxDepth);
+    return getChainTree(inp.item, needed, depth + 1, maxDepth, meTe);
   });
   return {
     item,
@@ -634,7 +1004,7 @@ function getChainTree(item, qty, depth = 0, maxDepth = 6) {
     runs,
     mode: 'build',
     type: depth === 0 ? 'final' : 'intermediate',
-    timeHours: Core.jobTimeHours(reaction.timeHours, 1, isReaction ? 0 : s.te, timeMult),
+    timeHours: Core.jobTimeHours(reaction.timeHours, 1, te, timeMult),
     activity: reaction.activity,
     children
   };
@@ -961,19 +1331,41 @@ function collectTypeIdsFromReqs(...reqMaps) {
 async function refreshPrices() {
   const status = document.getElementById('priceStatus');
   const token = ++priceFetchToken;
-  const hubKey = currentSettings().hub;
-  const regionId = Core.HUBS[hubKey].id;
+  const market = selectedMarket();
   const ids = collectTypeIdsFromReqs(lastFullReqs, lastSelectionReqs);
+  // Also price invention inputs / decryptors when relevant.
+  if (lastInventionExpect) {
+    for (const m of lastInventionExpect.expectedMaterials || []) {
+      const id = nameToTypeId.get(m.item.toLowerCase());
+      if (id) ids.push(id);
+    }
+    if (lastInventionExpect.decryptorPerJob) {
+      const id = nameToTypeId.get(lastInventionExpect.decryptorPerJob.toLowerCase());
+      if (id) ids.push(id);
+    }
+  }
+  for (const d of SDE.decryptors || []) ids.push(d.id);
+
   if (!ids.length) {
     status.textContent = 'No type IDs to price yet.';
     return;
   }
-  status.textContent = `Fetching ${ids.length} market prices (${Core.HUBS[hubKey].name})…`;
+
+  status.textContent = `Fetching market prices (${market.name})…`;
   try {
-    const data = await Core.fetchAggregates(ids, regionId);
+    let data;
+    if (market.kind === 'structure') {
+      const esi = getEsiToken();
+      if (!esi) throw new Error('Add/save an ESI access token to price structure markets');
+      data = await Core.fetchStructureAggregates(market.id, esi, ids);
+    } else {
+      data = await Core.fetchAggregates(ids, market.id);
+    }
     if (token !== priceFetchToken) return;
     priceCache = { ...priceCache, ...data };
-    status.innerHTML = `<span class="status-ok">Market prices updated</span> · ${Object.keys(data).length} types · ${Core.HUBS[hubKey].name}`;
+    status.innerHTML =
+      `<span class="status-ok">Market prices updated</span> · ${Object.keys(data).length} types · ${market.name}` +
+      (market.kind === 'structure' ? ' · structure ESI' : ' · region');
     calculate(false);
   } catch (err) {
     status.innerHTML = `<span class="status-bad">Price fetch failed:</span> ${err.message}`;
@@ -982,19 +1374,22 @@ async function refreshPrices() {
 
 async function loadFeeData() {
   const status = document.getElementById('priceStatus');
-  const hub = Core.HUBS[currentSettings().hub];
-  status.textContent = `Loading ESI adjusted prices + SCI for ${hub.name}…`;
+  const market = selectedMarket();
+  // Structures don't have a system ID here — fall back to Jita SCI unless region hub.
+  const systemId = market.kind === 'region' ? market.systemId : Core.HUBS.jita.systemId;
+  const label = market.kind === 'region' ? market.name : `${market.name} (SCI fallback: Jita)`;
+  status.textContent = `Loading ESI adjusted prices + SCI for ${label}…`;
   try {
     const [adj, sci] = await Promise.all([
       Core.fetchAdjustedPrices(),
-      Core.fetchSystemCostIndices(hub.systemId)
+      Core.fetchSystemCostIndices(systemId)
     ]);
     adjustedPrices = adj;
     document.getElementById('mfgSci').value = sci.manufacturing;
     document.getElementById('rxnSci').value = sci.reaction;
     saveSettings();
     status.innerHTML =
-      `<span class="status-ok">Fee data loaded</span> · ${hub.name} mfg SCI ${formatPct(sci.manufacturing)} · rxn ${formatPct(sci.reaction)} · ${Object.keys(adj).length} adjusted prices`;
+      `<span class="status-ok">Fee data loaded</span> · ${label} mfg SCI ${formatPct(sci.manufacturing)} · rxn ${formatPct(sci.reaction)} · ${Object.keys(adj).length} adjusted prices`;
     calculate(false);
   } catch (err) {
     status.innerHTML = `<span class="status-bad">Fee data failed:</span> ${err.message}`;
@@ -1041,13 +1436,16 @@ function setSelectedProduct(name, calculateNow = true) {
   const recipe = findReactionByOutput(name);
   const meta = document.getElementById('selectedMeta');
   if (recipe) {
+    const invN = inventionsForProduct(name).length;
     meta.innerHTML =
       `<span class="status-ok">Root:</span> ${recipe.output.item} · ` +
       `${recipe.activity === 'r' ? 'Reaction' : 'Manufacturing'} · ` +
       `${formatQty(recipe.output.qty)} / run · ${recipe.timeHours.toFixed(2)} h base` +
       (recipe.category ? ` · ${recipe.category}` : '') +
-      (recipe.group ? ` / ${recipe.group}` : '');
+      (recipe.group ? ` / ${recipe.group}` : '') +
+      (invN ? ` · <span class="status-ok">${invN} invention path(s)</span>` : '');
   } else meta.textContent = '';
+  populateInventionOutcomes(name);
   if (calculateNow) calculate();
 }
 
@@ -1089,25 +1487,43 @@ function calculate(fetchPrices = true) {
   // Root is always built.
   buildModes.delete(item.toLowerCase());
   selectedProduct = item;
+  renderInventionSummary();
+  const eff = effectiveMeTe(qty);
   const s = currentSettings();
-  currentTree = getChainTree(item, qty, 0, maxDepth);
-  renderFlowchart(currentTree);
+  currentTree = getChainTree(item, qty, 0, maxDepth, eff);
 
-  lastFullReqs = resolveReqs(item, qty);
+  // Resolve manufacturing with invented ME when enabled.
+  const opts = resolveOpts(eff.me);
+  lastFullReqs = Core.resolveRequirements(item, qty, opts);
+  for (const [mat, amount] of Object.entries(eff.inventMats || {})) {
+    lastFullReqs[mat] = (lastFullReqs[mat] || 0) + amount;
+  }
+  renderFlowchart(currentTree);
   document.getElementById('requirements').innerHTML = renderReqTable(lastFullReqs);
 
   const reaction = findReactionByOutput(item);
   const runs = Core.jobRuns(reaction.output.qty, qty);
   const isReaction = reaction.activity === 'r';
+  const te = isReaction ? 0 : eff.te;
   const hours = Core.jobTimeHours(
-    reaction.timeHours, runs, isReaction ? 0 : s.te,
+    reaction.timeHours, runs, te,
     isReaction ? s.rxnTimeMult : s.mfgTimeMult
   );
-  const fees = Core.sumJobFees(item, qty, resolveOpts());
+  const fees = Core.sumJobFees(item, qty, opts);
+  const inventNote = eff.me !== s.me
+    ? ` · invented ME ${eff.me}/TE ${eff.te} (expected invent ${formatIsk(eff.inventCost)})`
+    : '';
   document.getElementById('timeEstimate').textContent =
-    `Final job: ${runs} run(s) · ${hours.toFixed(1)} h with TE/structure · install fees across build tree: ${formatIsk(fees.total)} ISK (${fees.jobs.length} jobs).`;
+    `Final job: ${runs} run(s) · ${hours.toFixed(1)} h with TE/structure · install fees: ${formatIsk(fees.total)} ISK (${fees.jobs.length} jobs)${inventNote}.`;
 
-  renderProfitBar(document.getElementById('rootProfit'), 'Root', item, qty, lastFullReqs, fees.total);
+  renderProfitBar(
+    document.getElementById('rootProfit'),
+    'Root',
+    item,
+    qty,
+    lastFullReqs,
+    fees.total
+  );
   refreshSelectionUi();
   if (fetchPrices) queuePriceRefresh();
 }
@@ -1223,6 +1639,17 @@ function wireUi() {
     applyStructurePreset(e.target.value, true);
   });
 
+  ['inventionSelect', 'decryptorSelect', 'includeInvention', 'encSkill', 'sciSkill1', 'sciSkill2']
+    .forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        updateInventionSkillLabels();
+        renderInventionSummary();
+        calculate(false);
+      });
+    });
+
   const search = document.getElementById('productSearch');
   const box = document.getElementById('suggestions');
   search.addEventListener('focus', () => updateSuggestions(search.value));
@@ -1285,8 +1712,10 @@ function init() {
   customRecipes = safeGet(STORAGE_KEY, []);
   loadBoard();
   loadModes();
+  loadStructures();
   loadSettings();
   rebuildIndex();
+  populateDecryptors();
   populateCategories();
   wireUi();
   renderCustom();
@@ -1297,7 +1726,7 @@ function init() {
   document.getElementById('sdeStats').innerHTML = `
     <div class="stat"><b>${SDE.recipeCount.toLocaleString()}</b>recipes</div>
     <div class="stat"><b>${SDE.reactions.toLocaleString()}</b>reactions</div>
-    <div class="stat"><b>${SDE.manufacturing.toLocaleString()}</b>manufacturing</div>
+    <div class="stat"><b>${(SDE.inventionCount || 0).toLocaleString()}</b>invention paths</div>
     <div class="stat"><b>${SDE.typeCount.toLocaleString()}</b>types named</div>
   `;
   status.innerHTML = `<span class="status-ok">SDE loaded.</span> <span class="muted">${verifyCorrections()}</span>`;

@@ -309,6 +309,145 @@
     return out;
   }
 
+  /**
+   * Invention chance:
+   * base × (1 + (sci1 + sci2)/30 + encryption/40) × decryptorProbabilityMultiplier
+   * Skills: pass levels for the invention's required skills; encryption is detected by name.
+   */
+  function inventionChance(baseChance, skillLevels, decryptorMult) {
+    const base = Number(baseChance) || 0;
+    const sci = (Number(skillLevels.science1) || 0) + (Number(skillLevels.science2) || 0);
+    const enc = Number(skillLevels.encryption) || 0;
+    const mult = Number(decryptorMult);
+    const dMult = Number.isFinite(mult) && mult > 0 ? mult : 1;
+    const chance = base * (1 + sci / 30 + enc / 40) * dMult;
+    return Math.max(0, Math.min(1, chance));
+  }
+
+  function inventedBpcStats(baseRuns, decryptor) {
+    const d = decryptor || { me: 0, te: 0, runs: 0 };
+    return {
+      me: Math.max(0, 2 + (Number(d.me) || 0)),
+      te: Math.max(0, 4 + (Number(d.te) || 0)),
+      runs: Math.max(1, (Number(baseRuns) || 1) + (Number(d.runs) || 0))
+    };
+  }
+
+  /**
+   * Expected invention cost for N successful BPCs (or enough runs to cover manufactureRuns).
+   */
+  function inventionExpectation(opts) {
+    const chance = inventionChance(opts.baseChance, opts.skillLevels, opts.decryptorMult);
+    const bpc = inventedBpcStats(opts.baseRuns, opts.decryptor);
+    const manufactureRuns = Math.max(1, Number(opts.manufactureRuns) || 1);
+    const bpcsNeeded = Math.ceil(manufactureRuns / bpc.runs);
+    const expectedJobs = chance > 0 ? bpcsNeeded / chance : Infinity;
+    return {
+      chance,
+      bpc,
+      bpcsNeeded,
+      expectedJobs,
+      materialsPerJob: opts.materials || [],
+      expectedMaterials: (opts.materials || []).map((m) => ({
+        item: m.item,
+        qty: m.qty * expectedJobs
+      })),
+      decryptorPerJob: opts.decryptorItem || null,
+      expectedDecryptors: opts.decryptorItem ? expectedJobs : 0
+    };
+  }
+
+  function classifyInventionSkills(skills, typeNameFn) {
+    // skills: [[typeId, reqLevel], ...]
+    const classified = { encryption: null, science: [] };
+    for (const [tid, level] of skills || []) {
+      const name = typeNameFn(tid) || '';
+      const row = { id: tid, name, req: level };
+      if (/encryption/i.test(name)) classified.encryption = row;
+      else classified.science.push(row);
+    }
+    while (classified.science.length < 2) {
+      classified.science.push({ id: 0, name: 'Science skill', req: 1 });
+    }
+    if (!classified.encryption) {
+      classified.encryption = { id: 0, name: 'Encryption Methods', req: 1 };
+    }
+    return classified;
+  }
+
+  /**
+   * Fetch all pages of structure market orders (requires ESI bearer token with
+   * esi-markets.structure_markets.v1 and docking access).
+   */
+  async function fetchStructureOrders(structureId, accessToken) {
+    if (!accessToken) throw new Error('ESI access token required for structure markets');
+    const sid = Number(structureId);
+    if (!Number.isFinite(sid) || sid <= 0) throw new Error('Invalid structure ID');
+
+    const headers = { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' };
+    const firstUrl = `https://esi.evetech.net/latest/markets/structures/${sid}/?datasource=tranquility&page=1`;
+    const first = await fetch(firstUrl, { headers });
+    if (first.status === 401 || first.status === 403) {
+      throw new Error('Structure market forbidden — check token scope and docking access');
+    }
+    if (!first.ok) throw new Error(`Structure market failed (${first.status})`);
+    const pages = Number(first.headers.get('X-Pages') || first.headers.get('x-pages') || 1);
+    let orders = await first.json();
+    for (let page = 2; page <= pages; page += 1) {
+      const res = await fetch(
+        `https://esi.evetech.net/latest/markets/structures/${sid}/?datasource=tranquility&page=${page}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(`Structure market page ${page} failed (${res.status})`);
+      const chunk = await res.json();
+      orders = orders.concat(chunk);
+    }
+    return orders;
+  }
+
+  /** Aggregate structure orders into { typeId: { buy, sell } } for requested types (or all). */
+  function aggregateStructureOrders(orders, typeIdFilter) {
+    const want = typeIdFilter && typeIdFilter.length
+      ? new Set(typeIdFilter.map(Number))
+      : null;
+    const buyMax = {};
+    const sellMin = {};
+    for (const o of orders || []) {
+      const tid = Number(o.type_id);
+      if (want && !want.has(tid)) continue;
+      const price = Number(o.price) || 0;
+      if (!price) continue;
+      if (o.is_buy_order) {
+        buyMax[tid] = Math.max(buyMax[tid] || 0, price);
+      } else {
+        sellMin[tid] = sellMin[tid] == null ? price : Math.min(sellMin[tid], price);
+      }
+    }
+    const prices = {};
+    const ids = new Set([...Object.keys(buyMax), ...Object.keys(sellMin)].map(Number));
+    for (const tid of ids) {
+      prices[tid] = { buy: buyMax[tid] || 0, sell: sellMin[tid] || 0 };
+    }
+    return prices;
+  }
+
+  async function fetchStructureAggregates(structureId, accessToken, typeIds) {
+    const orders = await fetchStructureOrders(structureId, accessToken);
+    return aggregateStructureOrders(orders, typeIds);
+  }
+
+  /** Optional: resolve structure name if token has universe.read_structures. */
+  async function fetchStructureName(structureId, accessToken) {
+    if (!accessToken) return null;
+    const res = await fetch(
+      `https://esi.evetech.net/latest/universe/structures/${Number(structureId)}/?datasource=tranquility`,
+      { headers: { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.name || null;
+  }
+
   global.EveIndustryCore = {
     HUBS,
     STRUCTURE_PRESETS,
@@ -324,6 +463,14 @@
     toMultibuy,
     fetchAggregates,
     fetchAdjustedPrices,
-    fetchSystemCostIndices
+    fetchSystemCostIndices,
+    inventionChance,
+    inventedBpcStats,
+    inventionExpectation,
+    classifyInventionSkills,
+    fetchStructureOrders,
+    aggregateStructureOrders,
+    fetchStructureAggregates,
+    fetchStructureName
   };
 })(window);
