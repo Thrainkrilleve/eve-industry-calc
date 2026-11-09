@@ -1,13 +1,13 @@
 /**
  * EVE SSO — Authorization Code + PKCE (native / public client).
- * Correct for GitHub Pages: no client secret, no backend.
- * Create a Native app at https://developers.eveonline.com/
+ * Supports multiple characters linked in one browser profile.
  * Docs: https://developers.eveonline.com/docs/services/sso/
  */
 (function (global) {
   'use strict';
 
-  const AUTH_STORAGE = 'eveIndustryAuth_v1';
+  const AUTH_STORAGE = 'eveIndustryAuth_v2';
+  const AUTH_STORAGE_LEGACY = 'eveIndustryAuth_v1';
   const PKCE_STORAGE = 'eveIndustryPkce_v1';
   const CLIENT_ID_KEY = 'eveIndustryClientId_v1';
 
@@ -39,7 +39,6 @@
   }
 
   function redirectUri() {
-    // Exact page URL without hash/query — must match the EVE app callback.
     const u = new URL(window.location.href);
     u.hash = '';
     u.search = '';
@@ -54,7 +53,6 @@
   }
 
   function getClientId() {
-    // Production config wins; localStorage only when config has no clientId.
     const fromConfig = (getConfig().clientId || '').trim();
     if (fromConfig) return fromConfig;
     try {
@@ -72,39 +70,136 @@
     } catch {}
   }
 
-  function loadAuth() {
+  function emptyStore() {
+    return { activeId: null, accounts: {} };
+  }
+
+  function migrateLegacy(raw) {
+    if (!raw || typeof raw !== 'object') return emptyStore();
+    if (raw.accounts && typeof raw.accounts === 'object') {
+      return {
+        activeId: raw.activeId != null ? Number(raw.activeId) : null,
+        accounts: raw.accounts
+      };
+    }
+    // Legacy single-session shape.
+    if (raw.access_token && raw.character && raw.character.id) {
+      const id = Number(raw.character.id);
+      return { activeId: id, accounts: { [id]: raw } };
+    }
+    return emptyStore();
+  }
+
+  function loadStore() {
     try {
       const raw = localStorage.getItem(AUTH_STORAGE);
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
+      if (raw) return migrateLegacy(JSON.parse(raw));
+      const legacy = localStorage.getItem(AUTH_STORAGE_LEGACY);
+      if (legacy) {
+        const migrated = migrateLegacy(JSON.parse(legacy));
+        saveStore(migrated);
+        try { localStorage.removeItem(AUTH_STORAGE_LEGACY); } catch {}
+        return migrated;
+      }
+    } catch {}
+    return emptyStore();
   }
-  function saveAuth(auth) {
+
+  function saveStore(store) {
     try {
-      if (!auth) localStorage.removeItem(AUTH_STORAGE);
-      else localStorage.setItem(AUTH_STORAGE, JSON.stringify(auth));
+      if (!store || !store.accounts || !Object.keys(store.accounts).length) {
+        localStorage.removeItem(AUTH_STORAGE);
+        return;
+      }
+      localStorage.setItem(AUTH_STORAGE, JSON.stringify(store));
     } catch {}
   }
 
-  function isLoggedIn() {
-    const auth = loadAuth();
-    return !!(auth && auth.access_token && (!auth.expires_at || Date.now() < auth.expires_at - 30000));
+  function upsertAccount(session) {
+    const id = session && session.character && Number(session.character.id);
+    if (!id) throw new Error('Login succeeded but character id was missing.');
+    const store = loadStore();
+    store.accounts[id] = session;
+    store.activeId = id;
+    saveStore(store);
+    return session;
   }
 
-  function accessToken() {
-    const auth = loadAuth();
+  function removeAccount(characterId) {
+    const store = loadStore();
+    const id = Number(characterId);
+    delete store.accounts[id];
+    if (Number(store.activeId) === id) {
+      const remaining = Object.keys(store.accounts).map(Number);
+      store.activeId = remaining.length ? remaining[0] : null;
+    }
+    saveStore(store);
+    return store.activeId;
+  }
+
+  function setActiveCharacter(characterId) {
+    const store = loadStore();
+    const id = Number(characterId);
+    if (!store.accounts[id]) throw new Error('Character is not linked in this profile.');
+    store.activeId = id;
+    saveStore(store);
+    return store.accounts[id];
+  }
+
+  function listAccounts() {
+    const store = loadStore();
+    return Object.values(store.accounts)
+      .map((a) => ({
+        id: a.character && a.character.id,
+        name: (a.character && a.character.name) || 'Capsuleer',
+        expires_at: a.expires_at || null,
+        scp: (a.character && a.character.scp) || [],
+        active: Number(a.character && a.character.id) === Number(store.activeId)
+      }))
+      .filter((a) => a.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Active session (legacy-compatible). */
+  function loadAuth() {
+    const store = loadStore();
+    if (!store.activeId) return null;
+    return store.accounts[store.activeId] || null;
+  }
+
+  function saveAuth(auth) {
+    // Legacy helper: null clears active account only if wiping; prefer removeAccount/logout.
+    if (!auth) {
+      const store = loadStore();
+      if (store.activeId) removeAccount(store.activeId);
+      return;
+    }
+    upsertAccount(auth);
+  }
+
+  function isLoggedIn() {
+    return listAccounts().length > 0;
+  }
+
+  function accessToken(characterId) {
+    const store = loadStore();
+    const id = characterId != null ? Number(characterId) : Number(store.activeId);
+    const auth = store.accounts[id];
     if (!auth || !auth.access_token) return null;
     if (auth.expires_at && Date.now() >= auth.expires_at - 30000) return null;
     return auth.access_token;
   }
 
-  function character() {
-    const auth = loadAuth();
+  function character(characterId) {
+    const store = loadStore();
+    const id = characterId != null ? Number(characterId) : Number(store.activeId);
+    const auth = store.accounts[id];
     return auth && auth.character ? auth.character : null;
   }
 
-  async function parseJwtCharacter(accessToken) {
+  async function parseJwtCharacter(accessTokenValue) {
     try {
-      const payload = accessToken.split('.')[1];
+      const payload = accessTokenValue.split('.')[1];
       const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
       const sub = String(json.sub || '');
       const m = sub.match(/CHARACTER:EVE:(\d+)/);
@@ -168,13 +263,13 @@
       throw new Error('Token exchange failed (' + res.status + '): ' + text.slice(0, 240));
     }
     const token = await res.json();
-    const character = await parseJwtCharacter(token.access_token);
-    saveAuth({
+    const characterInfo = await parseJwtCharacter(token.access_token);
+    upsertAccount({
       access_token: token.access_token,
       refresh_token: token.refresh_token || null,
       token_type: token.token_type,
       expires_at: Date.now() + (Number(token.expires_in) || 1200) * 1000,
-      character,
+      character: characterInfo,
       client_id: pkce.clientId
     });
     sessionStorage.removeItem(PKCE_STORAGE);
@@ -184,12 +279,14 @@
     return true;
   }
 
-  async function refreshIfNeeded() {
-    const auth = loadAuth();
+  async function refreshAccount(characterId) {
+    const store = loadStore();
+    const id = Number(characterId);
+    const auth = store.accounts[id];
     if (!auth) return null;
     if (auth.expires_at && Date.now() < auth.expires_at - 30000) return auth.access_token;
     if (!auth.refresh_token || !auth.client_id) {
-      saveAuth(null);
+      removeAccount(id);
       return null;
     }
     const body = new URLSearchParams({
@@ -203,23 +300,46 @@
       body
     });
     if (!res.ok) {
-      saveAuth(null);
+      removeAccount(id);
       return null;
     }
     const token = await res.json();
-    const character = await parseJwtCharacter(token.access_token);
-    saveAuth({
+    const characterInfo = await parseJwtCharacter(token.access_token);
+    store.accounts[id] = {
       ...auth,
       access_token: token.access_token,
       refresh_token: token.refresh_token || auth.refresh_token,
       expires_at: Date.now() + (Number(token.expires_in) || 1200) * 1000,
-      character
-    });
+      character: characterInfo
+    };
+    saveStore(store);
     return token.access_token;
   }
 
+  async function refreshIfNeeded(characterId) {
+    const store = loadStore();
+    const id = characterId != null ? Number(characterId) : Number(store.activeId);
+    if (!id) return null;
+    return refreshAccount(id);
+  }
+
+  async function refreshAllIfNeeded() {
+    const store = loadStore();
+    const tokens = {};
+    for (const id of Object.keys(store.accounts)) {
+      tokens[id] = await refreshAccount(id);
+    }
+    return tokens;
+  }
+
+  /** Remove active character (or all if only one). */
   function logout() {
-    saveAuth(null);
+    const store = loadStore();
+    if (store.activeId) removeAccount(store.activeId);
+  }
+
+  function logoutAll() {
+    saveStore(emptyStore());
   }
 
   global.EveAuth = {
@@ -228,12 +348,19 @@
     getClientId,
     setClientId,
     loadAuth,
+    saveAuth,
+    loadStore,
+    listAccounts,
+    setActiveCharacter,
+    removeAccount,
     isLoggedIn,
     accessToken,
     character,
     beginLogin,
     handleRedirectCallback,
     refreshIfNeeded,
-    logout
+    refreshAllIfNeeded,
+    logout,
+    logoutAll
   };
 })(window);

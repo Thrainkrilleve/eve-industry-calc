@@ -183,10 +183,15 @@
       <h1>EVE Online Industry Calculator</h1>
       <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · ESI blueprints / jobs / assets.</p>
     </div>
-    <div style="text-align:right;min-width:220px;">
+    <div style="text-align:right;min-width:260px;">
       <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
-      <button type="button" id="eveLoginBtn" onclick="eveLogin()">Login with EVE</button>
-      <button type="button" class="ghost" id="eveLogoutBtn" onclick="eveLogout()" hidden>Logout</button>
+      <div class="row" style="justify-content:flex-end;margin-bottom:0;">
+        <select id="characterSelect" hidden title="Linked characters" style="max-width:180px;"></select>
+        <button type="button" id="eveLoginBtn" onclick="eveLogin()">Login with EVE</button>
+        <button type="button" class="secondary" id="eveAddCharBtn" onclick="eveLogin()" hidden>Add character</button>
+        <button type="button" class="ghost" id="eveRemoveCharBtn" onclick="eveRemoveActive()" hidden>Remove</button>
+        <button type="button" class="ghost" id="eveLogoutBtn" onclick="eveLogoutAll()" hidden>Logout all</button>
+      </div>
     </div>
   </div>
 
@@ -298,6 +303,11 @@
     </p>
     <div class="row" style="margin-bottom:8px;">
       <button type="button" onclick="syncCharacterEsi()">Sync from EVE</button>
+      <label>Scope</label>
+      <select id="esiSyncScope">
+        <option value="active">Active character</option>
+        <option value="all">All linked characters</option>
+      </select>
       <button type="button" class="ghost" onclick="renderAssetShortfall()">Refresh shortfall</button>
       <span id="esiSyncStatus" class="muted"></span>
     </div>
@@ -527,10 +537,10 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108f"></script>
-<script src="eve-industry-data.js?v=20261108f"></script>
-<script src="industry-core.js?v=20261108f"></script>
-<script src="auth.js?v=20261108f"></script>
+<script src="config.js?v=20261108g"></script>
+<script src="eve-industry-data.js?v=20261108g"></script>
+<script src="industry-core.js?v=20261108g"></script>
+<script src="auth.js?v=20261108g"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -732,7 +742,9 @@ function describeBlueprint(bp) {
     runs: Number(bp.runs),
     typeId: Number(bp.type_id),
     itemId: Number(bp.item_id),
-    locationId: Number(bp.location_id)
+    locationId: Number(bp.location_id),
+    ownerName: bp._ownerName || '',
+    ownerId: bp._ownerId || null
   };
 }
 
@@ -792,7 +804,6 @@ function saveEveClientId() {
 
 async function eveLogin() {
   try {
-    // Prefer auth helper, but fall back to config.js directly (avoids stale auth.js cache misses).
     const clientId = (EveAuth.getClientId && EveAuth.getClientId()) ||
       (window.EVE_INDUSTRY_CONFIG && window.EVE_INDUSTRY_CONFIG.clientId) || '';
     if (!String(clientId).trim()) {
@@ -805,19 +816,61 @@ async function eveLogin() {
     alert(err.message);
   }
 }
-function eveLogout() {
-  EveAuth.logout();
+function eveLogoutAll() {
+  if (EveAuth.listAccounts().length && !confirm('Log out all linked characters on this browser?')) return;
+  EveAuth.logoutAll();
+  clearEsiCache();
   refreshAuthUi();
+}
+function eveRemoveActive() {
+  const c = EveAuth.character();
+  if (!c) return;
+  if (!confirm(`Remove ${c.name} from this profile?`)) return;
+  EveAuth.removeAccount(c.id);
+  clearEsiCache();
+  refreshAuthUi();
+}
+function onCharacterSwitch() {
+  const sel = document.getElementById('characterSelect');
+  const id = Number(sel.value);
+  if (!id) return;
+  try {
+    EveAuth.setActiveCharacter(id);
+    clearEsiCache();
+    refreshAuthUi();
+    document.getElementById('esiSyncStatus').innerHTML =
+      `<span class="status-ok">Active:</span> ${EveAuth.character().name} — sync to load their data.`;
+  } catch (err) {
+    alert(err.message);
+  }
+}
+function clearEsiCache() {
+  esiBlueprints = [];
+  esiAssets = [];
+  esiJobs = [];
+  esiAssetQty = {};
+  esiLocations = [];
+  lastShortfallLines = [];
+  const bp = document.getElementById('bpTableWrap');
+  const loc = document.getElementById('locTableWrap');
+  const jobs = document.getElementById('jobsTableWrap');
+  const short = document.getElementById('shortfallTableWrap');
+  if (bp) bp.innerHTML = '<p class="empty-state">Sync while logged in to load blueprints.</p>';
+  if (loc) loc.innerHTML = '<p class="empty-state">Locations appear after sync from blueprints, assets, and jobs.</p>';
+  if (jobs) jobs.innerHTML = '<p class="empty-state">No industry jobs loaded.</p>';
+  if (short) short.innerHTML = '<p class="empty-state">Calculate a build, then sync assets (or refresh shortfall).</p>';
 }
 function refreshAuthUi() {
   const status = document.getElementById('authStatus');
   const loginBtn = document.getElementById('eveLoginBtn');
+  const addBtn = document.getElementById('eveAddCharBtn');
+  const removeBtn = document.getElementById('eveRemoveCharBtn');
   const logoutBtn = document.getElementById('eveLogoutBtn');
+  const charSelect = document.getElementById('characterSelect');
   const cb = document.getElementById('eveCallbackDisplay');
   const cid = document.getElementById('eveClientIdInput');
   if (cb) cb.value = EveAuth.redirectUri();
   if (cid && document.body.classList.contains('dev')) {
-    // Show override if present, else configured id
     try {
       const override = localStorage.getItem('eveIndustryClientId_v1') || '';
       cid.value = override || EveAuth.getClientId();
@@ -828,19 +881,32 @@ function refreshAuthUi() {
       cid.value = EveAuth.getClientId();
     }
   }
-  if (EveAuth.isLoggedIn()) {
-    const c = EveAuth.character();
+
+  const accounts = EveAuth.listAccounts ? EveAuth.listAccounts() : [];
+  if (accounts.length) {
+    const active = EveAuth.character();
     const missing = missingIndustryScopes();
-    status.innerHTML = `<span class="status-ok">Logged in:</span> ${c && c.name ? c.name : 'Capsuleer'}` +
+    status.innerHTML =
+      `<span class="status-ok">${accounts.length} linked</span> · active: <strong>${active && active.name ? active.name : 'Capsuleer'}</strong>` +
       (missing.length
-        ? `<div class="muted" style="margin-top:4px;">Re-login after adding blueprint/assets/jobs scopes on the Developers Portal.</div>`
+        ? `<div class="muted" style="margin-top:4px;">Re-login that character after adding blueprint/assets/jobs scopes on the Developers Portal.</div>`
         : '');
     loginBtn.hidden = true;
+    addBtn.hidden = false;
+    removeBtn.hidden = false;
     logoutBtn.hidden = false;
+    charSelect.hidden = false;
+    charSelect.innerHTML = accounts.map((a) =>
+      `<option value="${a.id}" ${a.active ? 'selected' : ''}>${a.name}</option>`
+    ).join('');
   } else {
     status.textContent = EveAuth.getClientId() ? 'Not logged in' : 'Login not configured';
     loginBtn.hidden = false;
+    addBtn.hidden = true;
+    removeBtn.hidden = true;
     logoutBtn.hidden = true;
+    charSelect.hidden = true;
+    charSelect.innerHTML = '';
   }
 }
 function saveEsiToken() {
@@ -932,38 +998,75 @@ function wireEsiTabs() {
   document.getElementById('bpKindFilter').addEventListener('change', renderBlueprintTable);
 }
 
+function tagOwner(rows, owner) {
+  return (rows || []).map((row) => ({
+    ...row,
+    _ownerId: owner.id,
+    _ownerName: owner.name
+  }));
+}
+
+async function syncOneCharacter(account) {
+  const token = await EveAuth.refreshIfNeeded(account.id);
+  if (!token) throw new Error(`Could not refresh token for ${account.name}`);
+  const owner = { id: account.id, name: account.name };
+  const [bps, assets, jobs] = await Promise.all([
+    Core.fetchCharacterBlueprints(account.id, token),
+    Core.fetchCharacterAssets(account.id, token),
+    Core.fetchCharacterIndustryJobs(account.id, token)
+  ]);
+  return {
+    owner,
+    token,
+    bps: tagOwner(bps, owner),
+    assets: tagOwner(assets, owner),
+    jobs: tagOwner(jobs, owner)
+  };
+}
+
 async function syncCharacterEsi() {
   const status = document.getElementById('esiSyncStatus');
-  const token = await ensureEsiToken();
-  const char = EveAuth.character && EveAuth.character();
-  if (!token || !char || !char.id) {
+  const scope = (document.getElementById('esiSyncScope') || {}).value || 'active';
+  const accounts = EveAuth.listAccounts ? EveAuth.listAccounts() : [];
+  if (!accounts.length) {
     status.innerHTML = '<span class="status-bad">Log in with EVE first.</span>';
     return;
   }
+  const targets = scope === 'all'
+    ? accounts
+    : accounts.filter((a) => a.active);
+  if (!targets.length) {
+    status.innerHTML = '<span class="status-bad">No active character selected.</span>';
+    return;
+  }
+
   const missing = missingIndustryScopes();
-  if (missing.length) {
+  if (missing.length && scope === 'active') {
     status.innerHTML =
-      '<span class="status-bad">Missing scopes.</span> Add them on the Developers Portal, then logout/login: ' +
+      '<span class="status-bad">Missing scopes on active character.</span> Add them on the Developers Portal, then use Add character / re-login: ' +
       missing.map((s) => `<code>${s}</code>`).join(', ');
   }
-  status.textContent = 'Syncing blueprints, assets, jobs…';
+
+  status.textContent = `Syncing ${targets.length} character${targets.length > 1 ? 's' : ''}…`;
   try {
-    const [bps, assets, jobs] = await Promise.all([
-      Core.fetchCharacterBlueprints(char.id, token),
-      Core.fetchCharacterAssets(char.id, token),
-      Core.fetchCharacterIndustryJobs(char.id, token)
-    ]);
-    esiBlueprints = bps || [];
-    esiAssets = assets || [];
-    esiJobs = jobs || [];
+    const results = [];
+    for (const account of targets) {
+      results.push(await syncOneCharacter(account));
+    }
+    esiBlueprints = results.flatMap((r) => r.bps);
+    esiAssets = results.flatMap((r) => r.assets);
+    esiJobs = results.flatMap((r) => r.jobs);
     esiAssetQty = Core.aggregateAssetsByType(esiAssets);
-    await rebuildEsiLocations(token);
+    // Prefer active token for structure name lookups; fall back to first.
+    const active = results.find((r) => r.owner.id === (EveAuth.character() || {}).id) || results[0];
+    await rebuildEsiLocations(active.token);
     renderBlueprintTable();
     renderLocationTable();
     renderJobsTable();
     renderAssetShortfall();
+    const names = targets.map((t) => t.name).join(', ');
     status.innerHTML =
-      `<span class="status-ok">Synced</span> ${esiBlueprints.length} BP · ${esiAssets.length} assets · ${esiJobs.length} jobs · ${esiLocations.length} locations`;
+      `<span class="status-ok">Synced</span> ${names} · ${esiBlueprints.length} BP · ${esiAssets.length} assets · ${esiJobs.length} jobs · ${esiLocations.length} locations`;
   } catch (err) {
     status.innerHTML = `<span class="status-bad">Sync failed:</span> ${err.message}`;
   }
@@ -1022,22 +1125,26 @@ function renderBlueprintTable() {
     if (kind === 'bpc' && d.kind !== 'bpc') return false;
     if (kind === 'known' && !d.known) return false;
     if (!q) return true;
-    return d.product.toLowerCase().includes(q) || typeName(d.typeId).toLowerCase().includes(q);
+    return d.product.toLowerCase().includes(q) ||
+      typeName(d.typeId).toLowerCase().includes(q) ||
+      (d.ownerName || '').toLowerCase().includes(q);
   });
   rows.sort((a, b) => a.product.localeCompare(b.product) || b.me - a.me || b.te - a.te);
   if (!rows.length) {
     wrap.innerHTML = '<p class="empty-state">No blueprints match this filter.</p>';
     return;
   }
+  const multi = new Set(esiBlueprints.map((b) => b._ownerId).filter(Boolean)).size > 1;
   wrap.innerHTML =
     `<table><thead><tr>
-      <th>Product / BP</th><th>ME</th><th>TE</th><th>Runs</th><th></th>
+      <th>Product / BP</th>${multi ? '<th>Pilot</th>' : ''}<th>ME</th><th>TE</th><th>Runs</th><th></th>
     </tr></thead><tbody>` +
     rows.slice(0, 400).map((d) => {
       const disabled = d.known ? '' : 'disabled title="No matching SDE recipe"';
       return `<tr>
         <td>${d.product}${d.known ? '' : ' <span class="muted">(unmapped)</span>'}
           <div class="muted" style="font-size:11px;">${typeName(d.typeId)} · ${d.label}</div></td>
+        ${multi ? `<td class="muted">${d.ownerName || '—'}</td>` : ''}
         <td class="qty">${d.me}</td>
         <td class="qty">${d.te}</td>
         <td class="qty">${d.runs === -1 ? '∞' : d.runs}</td>
@@ -1112,9 +1219,10 @@ function renderJobsTable() {
     return;
   }
   const rows = [...esiJobs].sort((a, b) => String(a.end_date || '').localeCompare(String(b.end_date || '')));
+  const multi = new Set(esiJobs.map((j) => j._ownerId).filter(Boolean)).size > 1;
   wrap.innerHTML =
     `<table><thead><tr>
-      <th>Activity</th><th>Blueprint / product</th><th>Runs</th><th>Status</th><th>Ends</th><th>Facility</th>
+      <th>Activity</th>${multi ? '<th>Pilot</th>' : ''}<th>Blueprint / product</th><th>Runs</th><th>Status</th><th>Ends</th><th>Facility</th>
     </tr></thead><tbody>` +
     rows.map((job) => {
       const act = ACTIVITY_NAMES[job.activity_id] || ('Activity ' + job.activity_id);
@@ -1124,6 +1232,7 @@ function renderJobsTable() {
       const end = job.end_date ? new Date(job.end_date).toLocaleString() : '—';
       return `<tr>
         <td>${act}</td>
+        ${multi ? `<td class="muted">${job._ownerName || '—'}</td>` : ''}
         <td>${bpName}<div class="muted" style="font-size:11px;">→ ${product}</div></td>
         <td class="qty">${job.runs || 0}</td>
         <td>${job.status || '—'}</td>
@@ -2321,6 +2430,8 @@ function wireUi() {
   });
   document.getElementById('browseFilter').addEventListener('input', renderBrowse);
   wireEsiTabs();
+  const charSelect = document.getElementById('characterSelect');
+  if (charSelect) charSelect.addEventListener('change', onCharacterSwitch);
 }
 
 function verifyCorrections() {
@@ -2353,8 +2464,9 @@ async function init() {
     if (handled) {
       document.getElementById('structureStatus').innerHTML =
         '<span class="status-ok">EVE login complete.</span>';
+      const linked = EveAuth.listAccounts ? EveAuth.listAccounts().length : 1;
       document.getElementById('esiSyncStatus').innerHTML =
-        '<span class="status-ok">Logged in.</span> Click Sync from EVE to pull blueprints / jobs / assets.';
+        `<span class="status-ok">Character linked.</span> ${linked} on this profile — sync active or all.`;
     }
   } catch (err) {
     document.getElementById('structureStatus').innerHTML =
