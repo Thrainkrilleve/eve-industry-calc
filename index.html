@@ -60,47 +60,22 @@
   .search-wrap { position: relative; flex: 1; min-width: 260px; }
   .search-wrap input { width: 100%; }
   .suggestions {
-    position: absolute;
-    z-index: 20;
-    left: 0; right: 0; top: 100%;
-    background: #0d1117;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    max-height: 280px;
-    overflow-y: auto;
-    display: none;
+    position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    max-height: 280px; overflow-y: auto; display: none;
   }
   .suggestions.open { display: block; }
   .suggestions button {
-    display: block;
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    color: var(--text);
-    border: none;
-    border-radius: 0;
-    font-weight: 400;
-    padding: 8px 12px;
+    display: block; width: 100%; text-align: left; background: transparent;
+    color: var(--text); border: none; border-radius: 0; font-weight: 400; padding: 8px 12px;
   }
   .suggestions button:hover, .suggestions button.active { background: #243044; }
   .suggestions .meta { color: var(--muted); font-size: 12px; margin-left: 8px; }
-  .flowchart {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    min-height: 120px;
-  }
+  .flowchart { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 120px; }
   .node {
-    background: #243044;
-    border: 2px solid var(--accent);
-    border-radius: 10px;
-    padding: 10px 14px;
-    min-width: 180px;
-    max-width: 260px;
-    text-align: center;
-    cursor: pointer;
-    user-select: none;
+    background: #243044; border: 2px solid var(--accent); border-radius: 10px;
+    padding: 10px 14px; min-width: 190px; max-width: 280px; text-align: center;
+    cursor: pointer; user-select: none;
     transition: box-shadow 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
   }
   .node:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.35); }
@@ -108,6 +83,7 @@
   .node.fuel { border-color: var(--warn); }
   .node.intermediate { border-color: var(--accent2); }
   .node.final { border-color: var(--accent); background: #1e3a5f; }
+  .node.buy-mode { border-style: dashed; opacity: 0.92; }
   .node.selected {
     box-shadow: 0 0 0 2px var(--warn), 0 0 18px rgba(245, 166, 35, 0.25);
     border-color: var(--warn);
@@ -115,6 +91,11 @@
   .node.more { cursor: default; opacity: 0.75; }
   .node.more:hover { transform: none; box-shadow: none; }
   .node small { color: var(--muted); display: block; font-size: 12px; }
+  .mode-btn {
+    margin-top: 6px; padding: 2px 8px; font-size: 11px; border-radius: 999px;
+    background: #0d1117; color: var(--accent); border: 1px solid var(--border); cursor: pointer;
+  }
+  .mode-btn.buy { color: var(--warn); }
   .arrow { color: var(--muted); font-size: 18px; text-align: center; }
   .level { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 8px 0; }
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -123,10 +104,9 @@
   .qty { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); }
   .isk { font-variant-numeric: tabular-nums; color: var(--success); }
   .qty-input { width: 110px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
+  .mode-select { padding: 4px 8px; font-size: 12px; }
   .settings-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;
   }
   .settings-grid label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   .settings-grid input, .settings-grid select { width: 100%; }
@@ -134,12 +114,8 @@
   .add-form label { font-size: 12px; color: var(--muted); }
   .full { grid-column: 1 / -1; }
   .tag {
-    display: inline-block;
-    background: #2d3a4f;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    margin: 2px;
+    display: inline-block; background: #2d3a4f; padding: 2px 8px;
+    border-radius: 4px; font-size: 12px; margin: 2px;
   }
   .status-ok { color: var(--success); }
   .status-bad { color: var(--danger); }
@@ -147,56 +123,34 @@
   .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
   .stat { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 120px; }
   .stat b { display: block; color: var(--accent); font-size: 1.2rem; }
+  .stat b.neg { color: var(--danger); }
   .pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .pill {
-    border: 1px solid var(--border);
-    background: #0d1117;
-    color: var(--muted);
-    border-radius: 999px;
-    padding: 4px 10px;
-    font-size: 12px;
-    cursor: pointer;
+    border: 1px solid var(--border); background: #0d1117; color: var(--muted);
+    border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer;
   }
   .pill.active { border-color: var(--accent); color: var(--accent); }
   #knownList { max-height: 220px; overflow-y: auto; }
   .three-col { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; }
   .hint {
-    background: #0d1117;
-    border: 1px dashed var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 12px;
+    background: #0d1117; border: 1px dashed var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px;
   }
   .empty-state { color: var(--muted); font-size: 14px; padding: 8px 0; }
   .icon-btn {
-    padding: 4px 8px;
-    font-size: 12px;
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
+    padding: 4px 8px; font-size: 12px; background: transparent;
+    color: var(--muted); border: 1px solid var(--border);
   }
   .icon-btn:hover { color: var(--danger); border-color: var(--danger); }
-  .profit-bar {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
-  .profit-bar .stat b.neg { color: var(--danger); }
-  @media (max-width: 1100px) {
-    .three-col { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 980px) {
-    .add-form { grid-template-columns: 1fr; }
-  }
+  .profit-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  @media (max-width: 1100px) { .three-col { grid-template-columns: 1fr; } }
+  @media (max-width: 980px) { .add-form { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>EVE Online Industry Calculator</h1>
-  <p class="sub">SDE reactions + manufacturing. Click tree nodes for a selection board with editable job quantities. Prices via Fuzzwork.</p>
+  <p class="sub">SDE reactions + manufacturing · selection board · make-vs-buy · hub prices · job fees (SCI / SCC / tax).</p>
 
   <div class="panel" id="loadPanel">
     <div class="row"><span id="loadStatus">Loading SDE industry data…</span></div>
@@ -205,7 +159,7 @@
 
   <div class="panel">
     <h2>Industry Settings</h2>
-    <div class="settings-grid" id="settingsGrid">
+    <div class="settings-grid">
       <div>
         <label>Market hub</label>
         <select id="hubSelect"></select>
@@ -213,8 +167,8 @@
       <div>
         <label>Price side</label>
         <select id="priceSide">
-          <option value="sell">Buy from sell orders</option>
-          <option value="buy">Sell into buy orders</option>
+          <option value="sell">Materials: buy from sell</option>
+          <option value="buy">Materials: sell into buy</option>
         </select>
       </div>
       <div>
@@ -245,10 +199,32 @@
         <label>Reaction time mult</label>
         <input type="number" id="rxnTimeMult" value="1" min="0.5" max="1.5" step="0.01">
       </div>
+      <div>
+        <label>Mfg system cost index</label>
+        <input type="number" id="mfgSci" value="0.02" min="0" max="1" step="0.0001">
+      </div>
+      <div>
+        <label>Reaction system cost index</label>
+        <input type="number" id="rxnSci" value="0.01" min="0" max="1" step="0.0001">
+      </div>
+      <div>
+        <label>Structure role bonus</label>
+        <input type="number" id="roleBonus" value="0" min="0" max="0.5" step="0.01">
+      </div>
+      <div>
+        <label>Facility tax</label>
+        <input type="number" id="facilityTax" value="0.0025" min="0" max="0.2" step="0.0005">
+      </div>
+      <div>
+        <label>SCC surcharge</label>
+        <input type="number" id="sccInput" value="0.04" min="0" max="0.2" step="0.001">
+      </div>
     </div>
     <div class="row" style="margin-top:12px;margin-bottom:0;">
       <button type="button" onclick="applySettingsAndRecalc()">Apply &amp; recalculate</button>
-      <button type="button" class="secondary" onclick="refreshPrices()">Refresh prices</button>
+      <button type="button" class="secondary" onclick="refreshPrices()">Refresh market prices</button>
+      <button type="button" class="ghost" onclick="loadFeeData()">Load SCI + adjusted prices</button>
+      <button type="button" class="ghost" onclick="autoOptimizeModes()">Auto make-vs-buy</button>
       <span id="priceStatus" class="muted"></span>
     </div>
   </div>
@@ -281,15 +257,16 @@
   <div class="panel">
     <h2>Visual Flowchart</h2>
     <div class="hint">
-      Click a node to add/remove it from the selection board.
-      <strong>Shift+click</strong> adds that node’s quantity onto an existing selection.
-      Edit amounts in the board — totals and prices update immediately.
+      Click a node to add/remove it on the selection board.
+      <strong>Shift+click</strong> adds that node’s qty.
+      Use the <strong>Build / Buy</strong> chip on craftable nodes (or Auto make-vs-buy) to stop expanding that branch.
     </div>
     <div class="row">
       <label>Max depth</label>
       <input type="number" id="maxDepth" value="6" min="1" max="20" style="width:80px">
       <label>Nodes / level</label>
       <input type="number" id="maxNodes" value="24" min="4" max="100" style="width:80px">
+      <button type="button" class="ghost" onclick="resetAllModes()">Reset all to Build</button>
     </div>
     <div id="flowchart" class="flowchart">
       <p class="muted">Select a product and click Calculate.</p>
@@ -312,7 +289,7 @@
     </div>
     <div class="panel">
       <h2>Selection Requirements</h2>
-      <p class="muted" style="margin-top:0;font-size:13px;">Materials for every selected job (merged, ME applied on manufacturing).</p>
+      <p class="muted" style="margin-top:0;font-size:13px;">Respects Build/Buy modes and ME on manufacturing jobs.</p>
       <div id="selectionRequirements"><p class="empty-state">Select nodes to see materials.</p></div>
     </div>
     <div class="panel">
@@ -375,7 +352,8 @@
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
 const BOARD_KEY = 'eveIndustryBoard_v1';
-const SETTINGS_KEY = 'eveIndustrySettings_v1';
+const SETTINGS_KEY = 'eveIndustrySettings_v2';
+const MODES_KEY = 'eveIndustryModes_v1';
 const Core = window.EveIndustryCore;
 
 let SDE = null;
@@ -389,11 +367,13 @@ let suggestionItems = [];
 let suggestionIndex = -1;
 /** @type {Map<string, {item: string, qty: number, treeQty: number|null}>} */
 let selectionBoard = new Map();
+/** @type {Map<string, 'build'|'buy'>} */
+let buildModes = new Map();
 let currentTree = null;
 let lastFullReqs = {};
 let lastSelectionReqs = {};
-/** @type {Record<string, {buy:number, sell:number}>} */
 let priceCache = {};
+let adjustedPrices = {};
 let priceFetchToken = 0;
 
 function safeGet(key, fallback) {
@@ -411,21 +391,21 @@ function safeSet(key, value) {
 function typeName(id) {
   return SDE.names[String(id)] || `Type ${id}`;
 }
-
 function hoursFromSeconds(sec) {
   return (Number(sec) || 0) / 3600;
 }
-
 function formatQty(n) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
-
 function formatIsk(n) {
   if (!Number.isFinite(n)) return '—';
   if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2) + 'B';
   if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + 'M';
   if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + 'K';
   return n.toFixed(2);
+}
+function formatPct(x) {
+  return ((Number(x) || 0) * 100).toFixed(2) + '%';
 }
 
 function normalizeRecipe(raw, custom = false) {
@@ -464,7 +444,6 @@ function rebuildIndex() {
   recipeIndex = new Map();
   productMeta = new Map();
   nameToTypeId = new Map();
-
   if (SDE) {
     for (const [id, name] of Object.entries(SDE.names)) {
       nameToTypeId.set(name.toLowerCase(), Number(id));
@@ -478,7 +457,6 @@ function rebuildIndex() {
       }
     }
   }
-
   for (const custom of customRecipes) {
     const calc = normalizeRecipe(custom, true);
     const key = calc.output.item.toLowerCase();
@@ -491,9 +469,39 @@ function findReactionByOutput(itemName) {
   if (!itemName) return null;
   return recipeIndex.get(itemName.toLowerCase()) || null;
 }
-
 function isFuelName(name) {
   return /fuel block/i.test(name);
+}
+
+function getMode(item) {
+  return buildModes.get(item.toLowerCase()) || 'build';
+}
+function setMode(item, mode, recalc = true) {
+  const key = item.toLowerCase();
+  if (mode === 'build') buildModes.delete(key);
+  else buildModes.set(key, 'buy');
+  saveModes();
+  if (recalc) calculate(false);
+}
+function toggleMode(item, ev) {
+  if (ev) ev.stopPropagation();
+  if (!findReactionByOutput(item)) return;
+  setMode(item, getMode(item) === 'buy' ? 'build' : 'buy', true);
+}
+function resetAllModes() {
+  buildModes.clear();
+  saveModes();
+  calculate(false);
+}
+function saveModes() {
+  safeSet(MODES_KEY, Object.fromEntries(buildModes));
+}
+function loadModes() {
+  buildModes = new Map();
+  const raw = safeGet(MODES_KEY, {});
+  for (const [k, v] of Object.entries(raw || {})) {
+    if (v === 'buy') buildModes.set(k, 'buy');
+  }
 }
 
 function currentSettings() {
@@ -506,16 +514,18 @@ function currentSettings() {
     mfgMatMult: parseFloat(document.getElementById('mfgMatMult').value) || 1,
     mfgTimeMult: parseFloat(document.getElementById('mfgTimeMult').value) || 1,
     rxnMatMult: parseFloat(document.getElementById('rxnMatMult').value) || 1,
-    rxnTimeMult: parseFloat(document.getElementById('rxnTimeMult').value) || 1
+    rxnTimeMult: parseFloat(document.getElementById('rxnTimeMult').value) || 1,
+    mfgSci: parseFloat(document.getElementById('mfgSci').value) || 0,
+    rxnSci: parseFloat(document.getElementById('rxnSci').value) || 0,
+    roleBonus: parseFloat(document.getElementById('roleBonus').value) || 0,
+    facilityTax: parseFloat(document.getElementById('facilityTax').value) || 0,
+    scc: parseFloat(document.getElementById('sccInput').value) || 0
   };
 }
-
 function saveSettings() {
   safeSet(SETTINGS_KEY, currentSettings());
 }
-
 function loadSettings() {
-  const s = safeGet(SETTINGS_KEY, null);
   const hubSelect = document.getElementById('hubSelect');
   hubSelect.innerHTML = Object.entries(Core.HUBS)
     .map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
@@ -523,8 +533,9 @@ function loadSettings() {
   structSelect.innerHTML = Object.entries(Core.STRUCTURE_PRESETS)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
 
+  const s = safeGet(SETTINGS_KEY, null);
   if (!s) {
-    applyStructurePreset('npc', false);
+    applyStructurePreset('npc', true);
     return;
   }
   hubSelect.value = s.hub || 'jita';
@@ -536,6 +547,11 @@ function loadSettings() {
   document.getElementById('mfgTimeMult').value = s.mfgTimeMult ?? 1;
   document.getElementById('rxnMatMult').value = s.rxnMatMult ?? 1;
   document.getElementById('rxnTimeMult').value = s.rxnTimeMult ?? 1;
+  document.getElementById('mfgSci').value = s.mfgSci ?? 0.02;
+  document.getElementById('rxnSci').value = s.rxnSci ?? 0.01;
+  document.getElementById('roleBonus').value = s.roleBonus ?? 0;
+  document.getElementById('facilityTax').value = s.facilityTax ?? 0.0025;
+  document.getElementById('sccInput').value = s.scc ?? 0.04;
 }
 
 function applyStructurePreset(key, writeFields = true) {
@@ -545,15 +561,26 @@ function applyStructurePreset(key, writeFields = true) {
   document.getElementById('mfgTimeMult').value = preset.mfgTime;
   document.getElementById('rxnMatMult').value = preset.rxnMat;
   document.getElementById('rxnTimeMult').value = preset.rxnTime;
+  document.getElementById('roleBonus').value = preset.roleBonus;
+  document.getElementById('facilityTax').value = preset.facilityTax;
 }
 
 function resolveOpts() {
   const s = currentSettings();
   return {
     findRecipe: findReactionByOutput,
+    modeFor: (name) => getMode(name),
     me: s.me,
     mfgMatMult: s.mfgMatMult,
-    rxnMatMult: s.rxnMatMult
+    rxnMatMult: s.rxnMatMult,
+    mfgSci: s.mfgSci,
+    rxnSci: s.rxnSci,
+    roleBonus: s.roleBonus,
+    facilityTax: s.facilityTax,
+    scc: s.scc,
+    adjustedPrices,
+    nameToTypeId,
+    unitPrice: (name) => unitPrice(name)
   };
 }
 
@@ -581,12 +608,14 @@ function costOfRequirements(reqs) {
 
 function getChainTree(item, qty, depth = 0, maxDepth = 6) {
   const reaction = findReactionByOutput(item);
+  const mode = getMode(item);
   const s = currentSettings();
-  if (!reaction || depth >= maxDepth) {
+  if (!reaction || mode === 'buy' || depth >= maxDepth) {
     return {
       item,
       qty,
-      type: !reaction ? (isFuelName(item) ? 'fuel' : 'raw') : 'intermediate',
+      mode: reaction ? mode : 'buy',
+      type: !reaction || mode === 'buy' ? (isFuelName(item) ? 'fuel' : 'raw') : 'intermediate',
       children: []
     };
   }
@@ -603,6 +632,7 @@ function getChainTree(item, qty, depth = 0, maxDepth = 6) {
     item,
     qty,
     runs,
+    mode: 'build',
     type: depth === 0 ? 'final' : 'intermediate',
     timeHours: Core.jobTimeHours(reaction.timeHours, 1, isReaction ? 0 : s.te, timeMult),
     activity: reaction.activity,
@@ -613,11 +643,9 @@ function getChainTree(item, qty, depth = 0, maxDepth = 6) {
 function saveBoard() {
   safeSet(BOARD_KEY, [...selectionBoard.values()]);
 }
-
 function loadBoard() {
-  const rows = safeGet(BOARD_KEY, []);
   selectionBoard = new Map();
-  for (const row of rows) {
+  for (const row of safeGet(BOARD_KEY, [])) {
     if (!row || !row.item) continue;
     selectionBoard.set(row.item.toLowerCase(), {
       item: row.item,
@@ -626,75 +654,59 @@ function loadBoard() {
     });
   }
 }
-
 function isSelected(item) {
   return selectionBoard.has(item.toLowerCase());
 }
-
 function toggleNodeSelection(item, nodeQty, shiftKey = false) {
   const key = item.toLowerCase();
   const existing = selectionBoard.get(key);
-  if (existing && !shiftKey) {
-    selectionBoard.delete(key);
-  } else if (existing && shiftKey) {
+  if (existing && !shiftKey) selectionBoard.delete(key);
+  else if (existing && shiftKey) {
     existing.qty = Math.max(1, existing.qty + nodeQty);
     existing.treeQty = nodeQty;
     selectionBoard.set(key, existing);
   } else {
-    selectionBoard.set(key, {
-      item,
-      qty: Math.max(1, nodeQty || 1),
-      treeQty: nodeQty
-    });
+    selectionBoard.set(key, { item, qty: Math.max(1, nodeQty || 1), treeQty: nodeQty });
   }
   saveBoard();
   refreshSelectionUi();
   highlightSelectedNodes();
   queuePriceRefresh();
 }
-
 function updateSelectionQty(item, qty) {
-  const key = item.toLowerCase();
-  const row = selectionBoard.get(key);
+  const row = selectionBoard.get(item.toLowerCase());
   if (!row) return;
   row.qty = Math.max(1, Number(qty) || 1);
-  selectionBoard.set(key, row);
+  selectionBoard.set(item.toLowerCase(), row);
   saveBoard();
   renderSelectionRequirements();
   renderSelectionBoard();
   document.getElementById('selectionCount').textContent = `${selectionBoard.size} selected`;
 }
-
 function removeSelection(item) {
   selectionBoard.delete(item.toLowerCase());
   saveBoard();
   refreshSelectionUi();
   highlightSelectedNodes();
 }
-
 function clearSelection() {
   selectionBoard.clear();
   saveBoard();
   refreshSelectionUi();
   highlightSelectedNodes();
 }
-
 function useSelectionAsRoot() {
   const first = selectionBoard.values().next().value;
   if (!first) return;
   if (!findReactionByOutput(first.item)) {
-    alert(`No recipe for “${first.item}” — pick a craftable intermediate or product.`);
+    alert(`No recipe for “${first.item}”.`);
     return;
   }
   document.getElementById('desiredQty').value = first.qty;
   setSelectedProduct(first.item, true);
 }
-
 function copySelectionList() {
-  if (!selectionBoard.size) {
-    alert('Selection board is empty.');
-    return;
-  }
+  if (!selectionBoard.size) return alert('Selection board is empty.');
   const text = [...selectionBoard.values()]
     .sort((a, b) => a.item.localeCompare(b.item))
     .map(r => `${Math.round(r.qty)} ${r.item}`)
@@ -704,19 +716,13 @@ function copySelectionList() {
     () => prompt('Copy this list:', text)
   );
 }
-
 function copyMultibuy(which) {
   const reqs = which === 'selection' ? lastSelectionReqs : lastFullReqs;
-  const lines = Object.entries(reqs)
-    .sort((a, b) => b[1] - a[1])
-    .map(([item, qty]) => ({ item, qty }));
-  if (!lines.length) {
-    alert('Nothing to copy yet.');
-    return;
-  }
+  const lines = Object.entries(reqs).sort((a, b) => b[1] - a[1]).map(([item, qty]) => ({ item, qty }));
+  if (!lines.length) return alert('Nothing to copy yet.');
   const text = Core.toMultibuy(lines);
   navigator.clipboard.writeText(text).then(
-    () => alert('Multibuy list copied (Item + Tab + Qty). Paste into EVE multibuy.'),
+    () => alert('Multibuy copied (Item + Tab + Qty).'),
     () => prompt('Copy this multibuy list:', text)
   );
 }
@@ -739,17 +745,28 @@ function renderFlowchart(tree) {
     const div = document.createElement('div');
     div.className = 'level';
     shown.forEach(n => {
+      const recipe = findReactionByOutput(n.item);
+      const mode = getMode(n.item);
       const node = document.createElement('div');
-      node.className = 'node ' + (n.type || '') + (isSelected(n.item) ? ' selected' : '');
+      node.className = 'node ' + (n.type || '') +
+        (isSelected(n.item) ? ' selected' : '') +
+        (recipe && mode === 'buy' ? ' buy-mode' : '');
       node.dataset.item = n.item;
-      node.dataset.qty = String(n.qty);
       node.title = 'Click to select · Shift+click to add qty';
       const act = n.activity === 'r' ? 'reaction' : n.activity === 'm' ? 'build' : '';
+      let modeHtml = '';
+      if (recipe) {
+        modeHtml = `<button type="button" class="mode-btn ${mode === 'buy' ? 'buy' : ''}" data-mode-toggle="1">${mode === 'buy' ? 'Buy' : 'Build'}</button>`;
+      }
       node.innerHTML =
         `<strong>${n.item}</strong><br><span class="qty">${formatQty(n.qty)}</span>` +
-        `<small>${n.runs ? n.runs + ' runs' : ''}${n.timeHours != null ? ' · ' + (n.timeHours * (n.runs || 1)).toFixed(2) + 'h' : ''}${act ? ' · ' + act : ''}</small>`;
+        `<small>${n.runs ? n.runs + ' runs' : ''}${n.timeHours != null ? ' · ' + (n.timeHours * (n.runs || 1)).toFixed(2) + 'h' : ''}${act ? ' · ' + act : ''}</small>` +
+        modeHtml;
       node.addEventListener('click', (e) => {
-        e.preventDefault();
+        if (e.target && e.target.dataset && e.target.dataset.modeToggle) {
+          toggleMode(n.item, e);
+          return;
+        }
         toggleNodeSelection(n.item, n.qty, e.shiftKey);
       });
       div.appendChild(node);
@@ -761,7 +778,6 @@ function renderFlowchart(tree) {
       div.appendChild(more);
     }
     container.appendChild(div);
-
     if (shown.some(n => n.children && n.children.length)) {
       const arrow = document.createElement('div');
       arrow.className = 'arrow';
@@ -772,7 +788,6 @@ function renderFlowchart(tree) {
       if (next.length) renderLevel(next);
     }
   }
-
   renderLevel([tree]);
 }
 
@@ -782,7 +797,9 @@ function renderReqTable(reqs) {
   for (const [mat, amount] of sorted) {
     const unit = unitPrice(mat);
     const line = unit != null ? unit * amount : null;
-    const note = isFuelName(mat) ? 'Fuel' : (findReactionByOutput(mat) ? 'Unexpanded intermediate' : 'Base / buy');
+    const recipe = findReactionByOutput(mat);
+    let note = isFuelName(mat) ? 'Fuel' : (recipe ? 'Unexpanded intermediate' : 'Base / buy');
+    if (recipe && getMode(mat) === 'buy') note = 'Buy (make-vs-buy)';
     html += `<tr>
       <td>${mat}</td>
       <td class="qty">${formatQty(amount)}</td>
@@ -795,16 +812,18 @@ function renderReqTable(reqs) {
   return html;
 }
 
-function renderProfitBar(el, label, productItem, productQty, reqs) {
+function renderProfitBar(el, label, productItem, productQty, reqs, jobFees) {
   const matCost = costOfRequirements(reqs);
+  const fees = jobFees || 0;
   const unit = unitPrice(productItem);
   const revenue = unit != null ? unit * productQty : null;
-  const profit = revenue != null ? revenue - matCost.total : null;
+  const totalCost = matCost.total + fees;
+  const profit = revenue != null ? revenue - totalCost : null;
   el.innerHTML = `
     <div class="stat"><b class="${profit != null && profit < 0 ? 'neg' : ''}">${profit != null ? formatIsk(profit) : '—'}</b>${label} profit</div>
-    <div class="stat"><b>${formatIsk(matCost.total)}</b>material cost</div>
+    <div class="stat"><b>${formatIsk(matCost.total)}</b>materials</div>
+    <div class="stat"><b>${formatIsk(fees)}</b>job fees</div>
     <div class="stat"><b>${revenue != null ? formatIsk(revenue) : '—'}</b>output value</div>
-    ${matCost.missing ? `<div class="stat"><b class="neg">${matCost.missing}</b>missing prices</div>` : ''}
   `;
 }
 
@@ -817,31 +836,35 @@ function renderSelectionBoard() {
     document.getElementById('selectionProfit').innerHTML = '';
     return;
   }
-
   const rows = [...selectionBoard.values()].sort((a, b) => a.item.localeCompare(b.item));
   count.textContent = `${rows.length} selected`;
   const s = currentSettings();
-
-  let html = '<table><thead><tr><th>Item</th><th>Qty</th><th>Runs</th><th>Job h</th><th></th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>Item</th><th>Qty</th><th>Mode</th><th>Runs</th><th>Job h</th><th></th></tr></thead><tbody>';
   for (const row of rows) {
     const recipe = findReactionByOutput(row.item);
+    const mode = getMode(row.item);
     let runs = '—';
     let hours = '—';
-    if (recipe) {
+    if (recipe && mode === 'build') {
       runs = Core.jobRuns(recipe.output.qty, row.qty);
       const isReaction = recipe.activity === 'r';
       hours = Core.jobTimeHours(
-        recipe.timeHours,
-        runs,
-        isReaction ? 0 : s.te,
+        recipe.timeHours, runs, isReaction ? 0 : s.te,
         isReaction ? s.rxnTimeMult : s.mfgTimeMult
       ).toFixed(2);
     }
+    const modeCell = recipe
+      ? `<select class="mode-select" onchange="setMode(${JSON.stringify(row.item)}, this.value)">
+           <option value="build" ${mode === 'build' ? 'selected' : ''}>Build</option>
+           <option value="buy" ${mode === 'buy' ? 'selected' : ''}>Buy</option>
+         </select>`
+      : '<span class="muted">buy</span>';
     html += `<tr>
-      <td>${row.item}${recipe ? '' : ' <span class="muted">(buy / raw)</span>'}</td>
+      <td>${row.item}</td>
       <td><input class="qty-input" type="number" min="1" step="1" value="${row.qty}"
            onchange="updateSelectionQty(${JSON.stringify(row.item)}, this.value)"
            oninput="updateSelectionQty(${JSON.stringify(row.item)}, this.value)"></td>
+      <td>${modeCell}</td>
       <td class="qty">${runs}</td>
       <td class="qty">${hours}</td>
       <td><button type="button" class="icon-btn" onclick="removeSelection(${JSON.stringify(row.item)})">×</button></td>
@@ -862,46 +885,43 @@ function renderSelectionRequirements() {
   }
 
   let merged = {};
+  let feeTotal = 0;
   let jobHours = 0;
-  let outputValueItems = [];
+  let outRevenue = 0;
   const s = currentSettings();
+  const opts = resolveOpts();
+
   for (const row of selectionBoard.values()) {
     const recipe = findReactionByOutput(row.item);
-    if (recipe) {
+    const mode = getMode(row.item);
+    if (recipe && mode === 'build') {
       merged = Core.mergeMaps(merged, resolveReqs(row.item, row.qty));
+      feeTotal += Core.sumJobFees(row.item, row.qty, opts).total;
       const isReaction = recipe.activity === 'r';
       const runs = Core.jobRuns(recipe.output.qty, row.qty);
       jobHours += Core.jobTimeHours(
-        recipe.timeHours,
-        runs,
-        isReaction ? 0 : s.te,
+        recipe.timeHours, runs, isReaction ? 0 : s.te,
         isReaction ? s.rxnTimeMult : s.mfgTimeMult
       );
-      outputValueItems.push({ item: row.item, qty: row.qty });
+      const p = unitPrice(row.item);
+      if (p != null) outRevenue += p * row.qty;
     } else {
       merged[row.item] = (merged[row.item] || 0) + row.qty;
+      const p = unitPrice(row.item);
+      if (p != null) outRevenue += p * row.qty;
     }
   }
   lastSelectionReqs = merged;
-
-  let outRevenue = 0;
-  let outMissing = 0;
-  for (const o of outputValueItems) {
-    const p = unitPrice(o.item);
-    if (p == null) outMissing += 1;
-    else outRevenue += p * o.qty;
-  }
   const matCost = costOfRequirements(merged);
-  const profit = outRevenue - matCost.total;
+  const profit = outRevenue - matCost.total - feeTotal;
 
   div.innerHTML =
     `<p class="muted" style="margin:0 0 8px;">Selected job time (serial): <span class="qty">${jobHours.toFixed(1)} h</span></p>` +
     renderReqTable(merged);
-
   profitEl.innerHTML = `
     <div class="stat"><b class="${profit < 0 ? 'neg' : ''}">${formatIsk(profit)}</b>selection profit</div>
-    <div class="stat"><b>${formatIsk(matCost.total)}</b>material cost</div>
-    <div class="stat"><b>${formatIsk(outRevenue)}</b>selected outputs</div>
+    <div class="stat"><b>${formatIsk(matCost.total)}</b>materials</div>
+    <div class="stat"><b>${formatIsk(feeTotal)}</b>job fees</div>
   `;
 }
 
@@ -926,6 +946,15 @@ function collectTypeIdsFromReqs(...reqMaps) {
     const id = nameToTypeId.get(selectedProduct.toLowerCase());
     if (id) ids.push(id);
   }
+  // Also price craftable intermediates for make-vs-buy comparisons.
+  if (currentTree) {
+    const walk = (n) => {
+      const id = nameToTypeId.get(n.item.toLowerCase());
+      if (id) ids.push(id);
+      (n.children || []).forEach(walk);
+    };
+    walk(currentTree);
+  }
   return ids;
 }
 
@@ -939,17 +968,52 @@ async function refreshPrices() {
     status.textContent = 'No type IDs to price yet.';
     return;
   }
-  status.textContent = `Fetching ${ids.length} prices (${Core.HUBS[hubKey].name})…`;
+  status.textContent = `Fetching ${ids.length} market prices (${Core.HUBS[hubKey].name})…`;
   try {
     const data = await Core.fetchAggregates(ids, regionId);
     if (token !== priceFetchToken) return;
     priceCache = { ...priceCache, ...data };
-    status.innerHTML = `<span class="status-ok">Prices updated</span> · ${Object.keys(data).length} types · ${Core.HUBS[hubKey].name}`;
+    status.innerHTML = `<span class="status-ok">Market prices updated</span> · ${Object.keys(data).length} types · ${Core.HUBS[hubKey].name}`;
     calculate(false);
-    refreshSelectionUi();
   } catch (err) {
     status.innerHTML = `<span class="status-bad">Price fetch failed:</span> ${err.message}`;
   }
+}
+
+async function loadFeeData() {
+  const status = document.getElementById('priceStatus');
+  const hub = Core.HUBS[currentSettings().hub];
+  status.textContent = `Loading ESI adjusted prices + SCI for ${hub.name}…`;
+  try {
+    const [adj, sci] = await Promise.all([
+      Core.fetchAdjustedPrices(),
+      Core.fetchSystemCostIndices(hub.systemId)
+    ]);
+    adjustedPrices = adj;
+    document.getElementById('mfgSci').value = sci.manufacturing;
+    document.getElementById('rxnSci').value = sci.reaction;
+    saveSettings();
+    status.innerHTML =
+      `<span class="status-ok">Fee data loaded</span> · ${hub.name} mfg SCI ${formatPct(sci.manufacturing)} · rxn ${formatPct(sci.reaction)} · ${Object.keys(adj).length} adjusted prices`;
+    calculate(false);
+  } catch (err) {
+    status.innerHTML = `<span class="status-bad">Fee data failed:</span> ${err.message}`;
+  }
+}
+
+function autoOptimizeModes() {
+  if (!selectedProduct) return alert('Select a root product first.');
+  const qty = parseFloat(document.getElementById('desiredQty').value) || 1;
+  const modes = Core.optimizeMakeVsBuy(selectedProduct, qty, resolveOpts());
+  buildModes = new Map();
+  for (const [k, v] of Object.entries(modes)) {
+    if (v === 'buy' && k !== selectedProduct.toLowerCase()) buildModes.set(k, 'buy');
+  }
+  saveModes();
+  const buyCount = buildModes.size;
+  document.getElementById('priceStatus').innerHTML =
+    `<span class="status-ok">Auto make-vs-buy</span> · ${buyCount} intermediates set to Buy`;
+  calculate(false);
 }
 
 let priceTimer = null;
@@ -980,14 +1044,10 @@ function setSelectedProduct(name, calculateNow = true) {
     meta.innerHTML =
       `<span class="status-ok">Root:</span> ${recipe.output.item} · ` +
       `${recipe.activity === 'r' ? 'Reaction' : 'Manufacturing'} · ` +
-      `${formatQty(recipe.output.qty)} / run · ` +
-      `${recipe.timeHours.toFixed(2)} h base` +
+      `${formatQty(recipe.output.qty)} / run · ${recipe.timeHours.toFixed(2)} h base` +
       (recipe.category ? ` · ${recipe.category}` : '') +
-      (recipe.group ? ` / ${recipe.group}` : '') +
-      (recipe.custom ? ' · <em>custom override</em>' : '');
-  } else {
-    meta.textContent = '';
-  }
+      (recipe.group ? ` / ${recipe.group}` : '');
+  } else meta.textContent = '';
   if (calculateNow) calculate();
 }
 
@@ -995,9 +1055,7 @@ function updateSuggestions(query) {
   const box = document.getElementById('suggestions');
   const q = (query || '').trim().toLowerCase();
   const pool = filteredProducts();
-  const matches = !q
-    ? pool.slice(0, 40)
-    : pool.filter(r => r.output.item.toLowerCase().includes(q)).slice(0, 60);
+  const matches = !q ? pool.slice(0, 40) : pool.filter(r => r.output.item.toLowerCase().includes(q)).slice(0, 60);
   suggestionItems = matches;
   suggestionIndex = matches.length ? 0 : -1;
   if (!matches.length) {
@@ -1007,8 +1065,7 @@ function updateSuggestions(query) {
   }
   box.innerHTML = matches.map((r, i) =>
     `<button type="button" class="${i === suggestionIndex ? 'active' : ''}" data-idx="${i}">` +
-    `${r.output.item}<span class="meta">${r.activity === 'r' ? 'reaction' : 'build'}${r.category ? ' · ' + r.category : ''}</span>` +
-    `</button>`
+    `${r.output.item}<span class="meta">${r.activity === 'r' ? 'reaction' : 'build'}${r.category ? ' · ' + r.category : ''}</span></button>`
   ).join('');
   box.classList.add('open');
 }
@@ -1029,6 +1086,8 @@ function calculate(fetchPrices = true) {
     return;
   }
 
+  // Root is always built.
+  buildModes.delete(item.toLowerCase());
   selectedProduct = item;
   const s = currentSettings();
   currentTree = getChainTree(item, qty, 0, maxDepth);
@@ -1041,15 +1100,14 @@ function calculate(fetchPrices = true) {
   const runs = Core.jobRuns(reaction.output.qty, qty);
   const isReaction = reaction.activity === 'r';
   const hours = Core.jobTimeHours(
-    reaction.timeHours,
-    runs,
-    isReaction ? 0 : s.te,
+    reaction.timeHours, runs, isReaction ? 0 : s.te,
     isReaction ? s.rxnTimeMult : s.mfgTimeMult
   );
+  const fees = Core.sumJobFees(item, qty, resolveOpts());
   document.getElementById('timeEstimate').textContent =
-    `Final job: ${runs} run(s) · ${hours.toFixed(1)} h with TE/structure (skills not applied). Nested jobs are extra.`;
+    `Final job: ${runs} run(s) · ${hours.toFixed(1)} h with TE/structure · install fees across build tree: ${formatIsk(fees.total)} ISK (${fees.jobs.length} jobs).`;
 
-  renderProfitBar(document.getElementById('rootProfit'), 'Root', item, qty, lastFullReqs);
+  renderProfitBar(document.getElementById('rootProfit'), 'Root', item, qty, lastFullReqs, fees.total);
   refreshSelectionUi();
   if (fetchPrices) queuePriceRefresh();
 }
@@ -1097,33 +1155,18 @@ function addCustomReaction() {
   const lines = document.getElementById('inputsText').value.split('\n').map(l => l.trim()).filter(Boolean);
   const time = parseFloat(document.getElementById('baseTime').value) || 0;
   const activity = document.getElementById('customActivity').value;
-
-  if (!name || !lines.length) {
-    alert('Provide an output name and at least one input.');
-    return;
-  }
-
+  if (!name || !lines.length) return alert('Provide an output name and at least one input.');
   const inputs = [];
   for (const line of lines) {
     const m = line.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
-    if (!m) {
-      alert('Invalid input line: ' + line + '\nUse: 100 Item Name');
-      return;
-    }
+    if (!m) return alert('Invalid input line: ' + line);
     inputs.push({ qty: parseFloat(m[1]), item: m[2].trim() });
   }
-
   const reaction = normalizeRecipe({
-    id: 'custom-' + Date.now(),
-    name,
-    output: { item: name, qty },
-    inputs,
-    timeHours: time,
-    activity,
-    group: 'Custom',
-    category: 'Custom'
+    id: 'custom-' + Date.now(), name,
+    output: { item: name, qty }, inputs, timeHours: time, activity,
+    group: 'Custom', category: 'Custom'
   }, true);
-
   customRecipes = customRecipes.filter(r => r.output.item.toLowerCase() !== name.toLowerCase());
   customRecipes.push(reaction);
   safeSet(STORAGE_KEY, customRecipes);
@@ -1135,7 +1178,6 @@ function addCustomReaction() {
   document.getElementById('outName').value = '';
   document.getElementById('inputsText').value = '';
 }
-
 function removeCustom(index) {
   customRecipes.splice(index, 1);
   safeSet(STORAGE_KEY, customRecipes);
@@ -1144,7 +1186,6 @@ function removeCustom(index) {
   renderCustom();
   renderBrowse();
 }
-
 function clearCustom() {
   if (!confirm('Remove all custom recipes?')) return;
   customRecipes = [];
@@ -1154,7 +1195,6 @@ function clearCustom() {
   renderCustom();
   renderBrowse();
 }
-
 function resetToTungsten() {
   document.getElementById('desiredQty').value = 10000;
   activityFilter = 'r';
@@ -1175,12 +1215,10 @@ function wireUi() {
       renderBrowse();
     });
   });
-
   document.getElementById('categoryFilter').addEventListener('change', () => {
     updateSuggestions(document.getElementById('productSearch').value);
     renderBrowse();
   });
-
   document.getElementById('structurePreset').addEventListener('change', (e) => {
     applyStructurePreset(e.target.value, true);
   });
@@ -1191,10 +1229,7 @@ function wireUi() {
   search.addEventListener('input', () => updateSuggestions(search.value));
   search.addEventListener('keydown', (e) => {
     if (!box.classList.contains('open') || !suggestionItems.length) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        setSelectedProduct(search.value.trim());
-      }
+      if (e.key === 'Enter') { e.preventDefault(); setSelectedProduct(search.value.trim()); }
       return;
     }
     if (e.key === 'ArrowDown') {
@@ -1210,9 +1245,7 @@ function wireUi() {
       const pick = suggestionItems[Math.max(0, suggestionIndex)];
       if (pick) setSelectedProduct(pick.output.item);
       box.classList.remove('open');
-    } else if (e.key === 'Escape') {
-      box.classList.remove('open');
-    }
+    } else if (e.key === 'Escape') box.classList.remove('open');
   });
   box.addEventListener('mousedown', (e) => {
     const btn = e.target.closest('button[data-idx]');
@@ -1225,7 +1258,6 @@ function wireUi() {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.search-wrap')) box.classList.remove('open');
   });
-
   document.getElementById('browseFilter').addEventListener('input', renderBrowse);
 }
 
@@ -1235,30 +1267,25 @@ function verifyCorrections() {
     'Carbon Polymers': ['Helium Fuel Block', 'Hydrocarbons', 'Silicates'],
     'Crystallite Alloy': ['Helium Fuel Block', 'Cobalt', 'Cadmium']
   };
-  const lines = [];
-  for (const [name, mats] of Object.entries(expect)) {
+  return Object.entries(expect).map(([name, mats]) => {
     const r = findReactionByOutput(name);
-    if (!r) { lines.push(`${name}: missing`); continue; }
+    if (!r) return `${name}: missing`;
     const got = new Set(r.inputs.map(i => i.item));
-    const ok = mats.every(m => got.has(m));
-    lines.push(`${ok ? '✓' : '✗'} ${name}: ${[...got].join(', ')}`);
-  }
-  return lines.join(' · ');
+    return `${mats.every(m => got.has(m)) ? '✓' : '✗'} ${name}`;
+  }).join(' · ');
 }
 
 function init() {
   const status = document.getElementById('loadStatus');
   if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore) {
-    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep eve-industry-data.js and industry-core.js next to index.html.</span>';
+    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data + industry-core.js next to index.html.</span>';
     return;
   }
-
   SDE = window.EVE_INDUSTRY_SDE;
   customRecipes = safeGet(STORAGE_KEY, []);
   loadBoard();
+  loadModes();
   loadSettings();
-  try { localStorage.removeItem('eveReactions'); localStorage.removeItem('eveCustomReactions'); } catch {}
-
   rebuildIndex();
   populateCategories();
   wireUi();
@@ -1282,11 +1309,8 @@ function init() {
   }
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
 </script>
 </body>
 </html>

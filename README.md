@@ -2,23 +2,27 @@
 
 Client-side calculator for **all SDE reactions and manufacturing** (moon goo, composites, ships, modules, etc.).
 
-Built so the core math can later move into an **Alliance Auth** Django app without rewriting the formulas.
+Core math lives in `industry-core.js` so it can later move into an **Alliance Auth** Django app.
 
 ## Open
 
 Open `index.html` in a browser (keep `eve-industry-data.js` and `industry-core.js` beside it).
 
-Market prices need network access (Fuzzwork aggregates).
+Needs network access for:
+
+- Fuzzwork market aggregates
+- ESI adjusted prices + system cost indices (`Load SCI + adjusted prices`)
 
 ## Features
 
 - Full CCP SDE recipe set (reactions + manufacturing)
 - Clickable build tree → **selection board** with editable job quantities
-- Shift+click to add a node’s quantity onto an existing selection
+- **Make vs buy** per intermediate (manual Build/Buy chip, or **Auto make-vs-buy**)
 - ME / TE + structure presets (Raitaru, Azbel, Sotiyo, Athanor, Tatara, NPC)
-- Hub prices (Jita / Amarr / Dodixie / Rens / Hek) via Fuzzwork
-- Material cost, output value, and rough profit
-- Multibuy copy (`Item<TAB>Qty`) for selection materials or full build
+- Hub market prices (Jita / Amarr / Dodixie / Rens / Hek)
+- Job install fees: system cost index, structure role bonus, facility tax, SCC surcharge
+- Material cost, job fees, output value, profit
+- Multibuy copy (`Item<TAB>Qty`)
 
 ## Rebuild data from CCP SDE
 
@@ -33,14 +37,12 @@ python build_sde_data.py
 | File | Role |
 |------|------|
 | `index.html` | UI |
-| `industry-core.js` | Shared math + market helpers (AA-friendly) |
+| `industry-core.js` | Shared math + market/ESI helpers |
 | `eve-industry-data.js` | Compact SDE recipes/names |
 | `build_sde_data.py` | Regenerates data from CCP JSONL |
 
 ## Next up
 
-- Make-vs-buy per tree node
-- System cost index / SCC / tax
 - Invention / T2 decryptors
 - GitHub Pages deploy
 - Alliance Auth app packaging

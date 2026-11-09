@@ -1,32 +1,55 @@
 /**
  * Shared industry math + market helpers.
- * Kept framework-agnostic so it can move into an Alliance Auth Django app later.
+ * Framework-agnostic for a future Alliance Auth Django app.
  */
 (function (global) {
   'use strict';
 
   const HUBS = {
-    jita: { id: 10000002, name: 'Jita' },
-    amarr: { id: 10000043, name: 'Amarr' },
-    dodixie: { id: 10000032, name: 'Dodixie' },
-    rens: { id: 10000030, name: 'Rens' },
-    hek: { id: 10000042, name: 'Hek' }
+    jita: { id: 10000002, name: 'Jita', systemId: 30000142 },
+    amarr: { id: 10000043, name: 'Amarr', systemId: 30002187 },
+    dodixie: { id: 10000032, name: 'Dodixie', systemId: 30002659 },
+    rens: { id: 10000030, name: 'Rens', systemId: 30002510 },
+    hek: { id: 10000042, name: 'Hek', systemId: 30002053 }
   };
 
   const STRUCTURE_PRESETS = {
-    npc: { label: 'NPC station', mfgMat: 1, mfgTime: 1, rxnMat: 1, rxnTime: 1 },
-    raitaru: { label: 'Raitaru', mfgMat: 0.99, mfgTime: 0.85, rxnMat: 1, rxnTime: 1 },
-    azbel: { label: 'Azbel', mfgMat: 0.99, mfgTime: 0.85, rxnMat: 1, rxnTime: 1 },
-    sotiyo: { label: 'Sotiyo', mfgMat: 0.99, mfgTime: 0.70, rxnMat: 1, rxnTime: 1 },
-    athanor: { label: 'Athanor', mfgMat: 1, mfgTime: 1, rxnMat: 1, rxnTime: 0.88 },
-    tatara: { label: 'Tatara', mfgMat: 1, mfgTime: 1, rxnMat: 0.99, rxnTime: 0.75 }
+    npc: {
+      label: 'NPC station',
+      mfgMat: 1, mfgTime: 1, rxnMat: 1, rxnTime: 1,
+      roleBonus: 0, facilityTax: 0.0025
+    },
+    raitaru: {
+      label: 'Raitaru',
+      mfgMat: 0.99, mfgTime: 0.85, rxnMat: 1, rxnTime: 1,
+      roleBonus: 0.03, facilityTax: 0.01
+    },
+    azbel: {
+      label: 'Azbel',
+      mfgMat: 0.99, mfgTime: 0.85, rxnMat: 1, rxnTime: 1,
+      roleBonus: 0.03, facilityTax: 0.01
+    },
+    sotiyo: {
+      label: 'Sotiyo',
+      mfgMat: 0.99, mfgTime: 0.70, rxnMat: 1, rxnTime: 1,
+      roleBonus: 0.03, facilityTax: 0.01
+    },
+    athanor: {
+      label: 'Athanor',
+      mfgMat: 1, mfgTime: 1, rxnMat: 1, rxnTime: 0.88,
+      roleBonus: 0, facilityTax: 0.01
+    },
+    tatara: {
+      label: 'Tatara',
+      mfgMat: 1, mfgTime: 1, rxnMat: 0.99, rxnTime: 0.75,
+      roleBonus: 0.03, facilityTax: 0.01
+    }
   };
 
   function materialNeeded(baseQty, runs, me, materialMultiplier) {
     const meFactor = 1 - (Math.max(0, Math.min(10, Number(me) || 0)) / 100);
     const mult = Number(materialMultiplier);
     const mod = meFactor * (Number.isFinite(mult) ? mult : 1);
-    // CCP: max(runs, ceil(round(base * runs * modifiers, 2)))
     return Math.max(runs, Math.ceil(Number((baseQty * runs * mod).toFixed(2))));
   }
 
@@ -42,8 +65,45 @@
   }
 
   /**
+   * Estimated Item Value for job install fees (base quantities × adjusted price × runs).
+   * ME does not reduce EIV.
+   */
+  function estimateEIV(recipe, runs, adjustedPrices, nameToTypeId) {
+    if (!recipe) return 0;
+    let eiv = 0;
+    for (const inp of recipe.inputs) {
+      const tid = nameToTypeId.get(inp.item.toLowerCase());
+      const adj = tid != null ? Number(adjustedPrices[tid]) || 0 : 0;
+      eiv += inp.qty * adj * runs;
+    }
+    return eiv;
+  }
+
+  /**
+   * Job install fee from EIV.
+   * gross = floor(EIV * SCI * (1 - roleBonus))
+   * tax   = floor(EIV * (facilityTax + SCC))
+   */
+  function jobInstallFee(eiv, feeOpts) {
+    const sci = Number(feeOpts.sci) || 0;
+    const role = Math.max(0, Math.min(0.5, Number(feeOpts.roleBonus) || 0));
+    const facilityTax = Math.max(0, Number(feeOpts.facilityTax) || 0);
+    const scc = Math.max(0, Number(feeOpts.scc) || 0);
+    const gross = Math.floor(eiv * sci * (1 - role));
+    const tax = Math.floor(eiv * (facilityTax + scc));
+    return { eiv, gross, tax, total: gross + tax };
+  }
+
+  function mergeMaps(a, b) {
+    const out = { ...a };
+    for (const [k, v] of Object.entries(b)) out[k] = (out[k] || 0) + v;
+    return out;
+  }
+
+  /**
    * @param {object} opts
    * @param {(name:string)=>any} opts.findRecipe
+   * @param {(name:string)=>('build'|'buy')} [opts.modeFor]
    * @param {number} opts.me
    * @param {number} opts.mfgMatMult
    * @param {number} opts.rxnMatMult
@@ -54,7 +114,8 @@
     visited.add(key);
 
     const recipe = opts.findRecipe(item);
-    if (!recipe) return { [item]: qtyNeeded };
+    const mode = opts.modeFor ? opts.modeFor(item) : 'build';
+    if (!recipe || mode === 'buy') return { [item]: qtyNeeded };
 
     const runs = jobRuns(recipe.output.qty, qtyNeeded);
     const isReaction = recipe.activity === 'r';
@@ -72,14 +133,132 @@
     return result;
   }
 
-  function mergeMaps(a, b) {
-    const out = { ...a };
-    for (const [k, v] of Object.entries(b)) out[k] = (out[k] || 0) + v;
-    return out;
+  /**
+   * Sum install fees for every Build job in the expansion tree.
+   */
+  function sumJobFees(item, qtyNeeded, opts, visited = new Set()) {
+    const key = item.toLowerCase();
+    if (visited.has(key)) return { total: 0, jobs: [] };
+    visited.add(key);
+
+    const recipe = opts.findRecipe(item);
+    const mode = opts.modeFor ? opts.modeFor(item) : 'build';
+    if (!recipe || mode === 'buy') return { total: 0, jobs: [] };
+
+    const runs = jobRuns(recipe.output.qty, qtyNeeded);
+    const isReaction = recipe.activity === 'r';
+    const me = isReaction ? 0 : opts.me;
+    const matMult = isReaction ? opts.rxnMatMult : opts.mfgMatMult;
+    const sci = isReaction ? opts.rxnSci : opts.mfgSci;
+    const eiv = estimateEIV(recipe, runs, opts.adjustedPrices || {}, opts.nameToTypeId || new Map());
+    const fee = jobInstallFee(eiv, {
+      sci,
+      roleBonus: opts.roleBonus,
+      facilityTax: opts.facilityTax,
+      scc: opts.scc
+    });
+
+    let total = fee.total;
+    const jobs = [{ item, qty: qtyNeeded, runs, activity: recipe.activity, ...fee }];
+
+    for (const inp of recipe.inputs) {
+      const needed = materialNeeded(inp.qty, runs, me, matMult);
+      const sub = sumJobFees(inp.item, needed, opts, new Set(visited));
+      total += sub.total;
+      jobs.push(...sub.jobs);
+    }
+    return { total, jobs };
+  }
+
+  /**
+   * Bottom-up make-vs-buy suggestions. Returns Map-like object { [itemLower]: 'build'|'buy' }.
+   * Root is always build.
+   */
+  function optimizeMakeVsBuy(rootItem, rootQty, opts) {
+    const modes = {};
+    const memo = new Map();
+
+    function priceOf(name, qty) {
+      const p = opts.unitPrice(name);
+      if (p == null || p <= 0) return null;
+      return p * qty;
+    }
+
+    function costBuild(item, qty) {
+      const recipe = opts.findRecipe(item);
+      if (!recipe) {
+        const buy = priceOf(item, qty);
+        return { cost: buy == null ? Infinity : buy, mode: 'buy' };
+      }
+
+      const runs = jobRuns(recipe.output.qty, qty);
+      const isReaction = recipe.activity === 'r';
+      const me = isReaction ? 0 : opts.me;
+      const matMult = isReaction ? opts.rxnMatMult : opts.mfgMatMult;
+      const sci = isReaction ? opts.rxnSci : opts.mfgSci;
+
+      let matCost = 0;
+      for (const inp of recipe.inputs) {
+        const needed = materialNeeded(inp.qty, runs, me, matMult);
+        const sub = decide(inp.item, needed);
+        matCost += sub.cost;
+      }
+
+      const eiv = estimateEIV(recipe, runs, opts.adjustedPrices || {}, opts.nameToTypeId || new Map());
+      const fee = jobInstallFee(eiv, {
+        sci,
+        roleBonus: opts.roleBonus,
+        facilityTax: opts.facilityTax,
+        scc: opts.scc
+      }).total;
+
+      return { cost: matCost + fee, mode: 'build' };
+    }
+
+    function decide(item, qty) {
+      const key = item.toLowerCase() + '|' + qty;
+      if (memo.has(key)) return memo.get(key);
+
+      const recipe = opts.findRecipe(item);
+      const buy = priceOf(item, qty);
+
+      if (!recipe) {
+        const res = { cost: buy == null ? Infinity : buy, mode: 'buy' };
+        memo.set(key, res);
+        modes[item.toLowerCase()] = 'buy';
+        return res;
+      }
+
+      const built = costBuild(item, qty);
+      let res = built;
+      if (buy != null && buy <= built.cost) {
+        res = { cost: buy, mode: 'buy' };
+      }
+      modes[item.toLowerCase()] = res.mode;
+      memo.set(key, res);
+      return res;
+    }
+
+    // Force root to build, but still optimize children.
+    const recipe = opts.findRecipe(rootItem);
+    if (!recipe) {
+      modes[rootItem.toLowerCase()] = 'buy';
+      return modes;
+    }
+
+    const runs = jobRuns(recipe.output.qty, rootQty);
+    const isReaction = recipe.activity === 'r';
+    const me = isReaction ? 0 : opts.me;
+    const matMult = isReaction ? opts.rxnMatMult : opts.mfgMatMult;
+    for (const inp of recipe.inputs) {
+      const needed = materialNeeded(inp.qty, runs, me, matMult);
+      decide(inp.item, needed);
+    }
+    modes[rootItem.toLowerCase()] = 'build';
+    return modes;
   }
 
   function toMultibuy(lines) {
-    // EVE multibuy accepts "Item Name<TAB>Qty" or "Qty Item Name"
     return lines
       .map(({ item, qty }) => `${item}\t${Math.round(qty)}`)
       .join('\n');
@@ -105,15 +284,46 @@
     return prices;
   }
 
+  async function fetchAdjustedPrices() {
+    const res = await fetch('https://esi.evetech.net/latest/markets/prices/?datasource=tranquility');
+    if (!res.ok) throw new Error(`Adjusted prices failed (${res.status})`);
+    const data = await res.json();
+    const map = {};
+    for (const row of data) {
+      if (row.type_id != null) map[row.type_id] = Number(row.adjusted_price) || 0;
+    }
+    return map;
+  }
+
+  async function fetchSystemCostIndices(systemId) {
+    const res = await fetch('https://esi.evetech.net/latest/industry/systems/?datasource=tranquility');
+    if (!res.ok) throw new Error(`Industry systems failed (${res.status})`);
+    const data = await res.json();
+    const row = data.find((s) => s.solar_system_id === Number(systemId));
+    if (!row) throw new Error(`System ${systemId} not found in ESI industry systems`);
+    const out = { manufacturing: 0, reaction: 0 };
+    for (const idx of row.cost_indices || []) {
+      if (idx.activity === 'manufacturing') out.manufacturing = Number(idx.cost_index) || 0;
+      if (idx.activity === 'reaction') out.reaction = Number(idx.cost_index) || 0;
+    }
+    return out;
+  }
+
   global.EveIndustryCore = {
     HUBS,
     STRUCTURE_PRESETS,
     materialNeeded,
     jobRuns,
     jobTimeHours,
+    estimateEIV,
+    jobInstallFee,
     resolveRequirements,
+    sumJobFees,
+    optimizeMakeVsBuy,
     mergeMaps,
     toMultibuy,
-    fetchAggregates
+    fetchAggregates,
+    fetchAdjustedPrices,
+    fetchSystemCostIndices
   };
 })(window);
