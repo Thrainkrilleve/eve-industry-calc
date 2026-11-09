@@ -5,12 +5,14 @@ End users only see **Login with EVE**. Client ID / callback / manual tokens live
 ## 1. Create the app
 
 1. Open [EVE Developers](https://developers.eveonline.com/)
-2. Create a new application (native / PKCE-capable)
+2. Create a **Native** application (PKCE — no client secret)
 3. Set the **Callback URL** exactly (trailing slash):
 
 ```text
 https://thrainkrilleve.github.io/eve-industry-calc/
 ```
+
+Do **not** use a confidential/web app with a client secret on GitHub Pages. CCP rejects Basic auth for that setup from the browser, and the secret would be public anyway.
 
 ## 2. Scopes
 
@@ -20,12 +22,11 @@ https://thrainkrilleve.github.io/eve-industry-calc/
 
 ## 3. Configure production
 
-Put credentials in `config.js`:
+Put the Client ID in `config.js`:
 
 ```js
 window.EVE_INDUSTRY_CONFIG = {
   clientId: 'YOUR_CLIENT_ID_HERE',
-  clientSecret: 'YOUR_CLIENT_SECRET_HERE', // required for confidential web apps
   scopes: [
     'publicData',
     'esi-markets.structure_markets.v1',
@@ -33,8 +34,6 @@ window.EVE_INDUSTRY_CONFIG = {
   ]
 };
 ```
-
-**Security note:** a Client Secret in GitHub Pages is world-readable. Use this only briefly, then rotate the secret, or recreate as a **native PKCE** app (no secret) / proxy token exchange through a backend.
 
 ## 4. Local / temporary override
 
