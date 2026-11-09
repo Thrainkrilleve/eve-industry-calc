@@ -149,8 +149,17 @@
 </head>
 <body>
 <div class="container">
-  <h1>EVE Online Industry Calculator</h1>
-  <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · job fees.</p>
+  <div class="row" style="justify-content:space-between;align-items:flex-start;">
+    <div>
+      <h1>EVE Online Industry Calculator</h1>
+      <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · job fees.</p>
+    </div>
+    <div style="text-align:right;min-width:220px;">
+      <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
+      <button type="button" id="eveLoginBtn" onclick="eveLogin()">Login with EVE</button>
+      <button type="button" class="ghost" id="eveLogoutBtn" onclick="eveLogout()" hidden>Logout</button>
+    </div>
+  </div>
 
   <div class="panel" id="loadPanel">
     <div class="row"><span id="loadStatus">Loading SDE industry data…</span></div>
@@ -232,11 +241,18 @@
   <div class="panel">
     <h2>Alliance / Player Structure Markets</h2>
     <p class="muted" style="margin-top:0;font-size:13px;">
-      Add Upwell structures your character can dock at. Prices use ESI
-      <code>/markets/structures/{id}/</code> with a local access token
-      (<code>esi-markets.structure_markets.v1</code>). Token stays in this browser only — replace with Alliance Auth SSO later.
+      Add Upwell structures your character can dock at. Prefer <strong>Login with EVE</strong> (PKCE) so structure orders use your SSO token.
+      Fallback: paste a temporary access token. See <code>SETUP-EVE-APP.md</code> for creating the EVE developer application.
     </p>
     <div class="settings-grid">
+      <div>
+        <label>EVE SSO Client ID</label>
+        <input type="text" id="eveClientIdInput" placeholder="From developers.eveonline.com">
+      </div>
+      <div>
+        <label>Callback URL (register exactly)</label>
+        <input type="text" id="eveCallbackDisplay" readonly>
+      </div>
       <div>
         <label>Structure ID</label>
         <input type="text" id="structureIdInput" placeholder="e.g. 1030049082711">
@@ -246,14 +262,15 @@
         <input type="text" id="structureNameInput" placeholder="Alliance Keepstar Market">
       </div>
       <div class="full" style="grid-column:1/-1;">
-        <label>ESI access token (Bearer, local only)</label>
-        <textarea id="esiTokenInput" rows="2" placeholder="Paste access token with structure_markets scope"></textarea>
+        <label>Manual ESI token fallback (optional if logged in)</label>
+        <textarea id="esiTokenInput" rows="2" placeholder="Only needed if not using Login with EVE"></textarea>
       </div>
     </div>
     <div class="row" style="margin-top:12px;">
+      <button type="button" onclick="saveEveClientId()">Save Client ID</button>
       <button type="button" onclick="addCustomStructure()">Add structure</button>
-      <button type="button" class="ghost" onclick="saveEsiToken()">Save token</button>
-      <button type="button" class="ghost" onclick="clearEsiToken()">Clear token</button>
+      <button type="button" class="ghost" onclick="saveEsiToken()">Save manual token</button>
+      <button type="button" class="ghost" onclick="clearEsiToken()">Clear manual token</button>
       <button type="button" class="secondary" onclick="resolveStructureName()">Lookup name</button>
       <span id="structureStatus" class="muted"></span>
     </div>
@@ -419,6 +436,7 @@
 
 <script src="eve-industry-data.js"></script>
 <script src="industry-core.js"></script>
+<script src="auth.js"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -550,7 +568,52 @@ function rebuildIndex() {
 }
 
 function getEsiToken() {
+  // Prefer live SSO session, then manual paste.
+  if (window.EveAuth) {
+    const t = EveAuth.accessToken();
+    if (t) return t;
+  }
   return (document.getElementById('esiTokenInput').value || safeGet(ESI_TOKEN_KEY, '') || '').trim();
+}
+
+function saveEveClientId() {
+  const id = document.getElementById('eveClientIdInput').value.trim();
+  EveAuth.setClientId(id);
+  document.getElementById('structureStatus').innerHTML = id
+    ? '<span class="status-ok">Client ID saved.</span> Register callback: ' + EveAuth.redirectUri()
+    : '<span class="muted">Client ID cleared.</span>';
+  refreshAuthUi();
+}
+
+async function eveLogin() {
+  try {
+    const id = document.getElementById('eveClientIdInput').value.trim();
+    if (id) EveAuth.setClientId(id);
+    await EveAuth.beginLogin();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+function eveLogout() {
+  EveAuth.logout();
+  refreshAuthUi();
+}
+function refreshAuthUi() {
+  const status = document.getElementById('authStatus');
+  const loginBtn = document.getElementById('eveLoginBtn');
+  const logoutBtn = document.getElementById('eveLogoutBtn');
+  document.getElementById('eveCallbackDisplay').value = EveAuth.redirectUri();
+  document.getElementById('eveClientIdInput').value = EveAuth.getClientId();
+  if (EveAuth.isLoggedIn()) {
+    const c = EveAuth.character();
+    status.innerHTML = `<span class="status-ok">Logged in:</span> ${c && c.name ? c.name : 'Capsuleer'}`;
+    loginBtn.hidden = true;
+    logoutBtn.hidden = false;
+  } else {
+    status.textContent = 'Not logged in';
+    loginBtn.hidden = false;
+    logoutBtn.hidden = true;
+  }
 }
 function saveEsiToken() {
   const token = document.getElementById('esiTokenInput').value.trim();
@@ -959,7 +1022,23 @@ function unitPrice(itemName) {
   const tid = nameToTypeId.get(itemName.toLowerCase());
   if (!tid || !priceCache[tid]) return null;
   const side = currentSettings().priceSide;
-  return priceCache[tid][side] || null;
+  const p = Number(priceCache[tid][side]);
+  return Number.isFinite(p) && p > 0 ? p : null;
+}
+
+function collectRecipeTreeTypeIds(item, visited = new Set()) {
+  const key = (item || '').toLowerCase();
+  if (!key || visited.has(key)) return [];
+  visited.add(key);
+  const ids = [];
+  const tid = nameToTypeId.get(key);
+  if (tid) ids.push(tid);
+  const recipe = findReactionByOutput(item);
+  if (!recipe) return ids;
+  for (const inp of recipe.inputs) {
+    ids.push(...collectRecipeTreeTypeIds(inp.item, visited));
+  }
+  return ids;
 }
 
 function costOfRequirements(reqs) {
@@ -1133,7 +1212,7 @@ function renderFlowchart(tree) {
         `<small>${n.runs ? n.runs + ' runs' : ''}${n.timeHours != null ? ' · ' + (n.timeHours * (n.runs || 1)).toFixed(2) + 'h' : ''}${act ? ' · ' + act : ''}</small>` +
         modeHtml;
       node.addEventListener('click', (e) => {
-        if (e.target && e.target.dataset && e.target.dataset.modeToggle) {
+        if (e.target && e.target.closest && e.target.closest('[data-mode-toggle]')) {
           toggleMode(n.item, e);
           return;
         }
@@ -1396,18 +1475,54 @@ async function loadFeeData() {
   }
 }
 
-function autoOptimizeModes() {
+async function autoOptimizeModes() {
   if (!selectedProduct) return alert('Select a root product first.');
+  const status = document.getElementById('priceStatus');
   const qty = parseFloat(document.getElementById('desiredQty').value) || 1;
-  const modes = Core.optimizeMakeVsBuy(selectedProduct, qty, resolveOpts());
+
+  // Ensure intermediate product prices exist (not just raw mats).
+  status.textContent = 'Loading prices for make-vs-buy…';
+  try {
+    const market = selectedMarket();
+    const ids = collectRecipeTreeTypeIds(selectedProduct);
+    if (!ids.length) throw new Error('No type IDs in recipe tree');
+    let data;
+    if (market.kind === 'structure') {
+      const esi = getEsiToken();
+      if (!esi) throw new Error('Login with EVE (or paste a token) to price structure markets');
+      data = await Core.fetchStructureAggregates(market.id, esi, ids);
+    } else {
+      data = await Core.fetchAggregates(ids, market.id);
+    }
+    priceCache = { ...priceCache, ...data };
+  } catch (err) {
+    status.innerHTML = `<span class="status-bad">Make-vs-buy prices failed:</span> ${err.message}`;
+    return;
+  }
+
+  const result = Core.optimizeMakeVsBuy(selectedProduct, qty, resolveOpts());
   buildModes = new Map();
-  for (const [k, v] of Object.entries(modes)) {
-    if (v === 'buy' && k !== selectedProduct.toLowerCase()) buildModes.set(k, 'buy');
+  const bought = [];
+  for (const [k, v] of Object.entries(result.modes || {})) {
+    if (v !== 'buy') continue;
+    if (k === selectedProduct.toLowerCase()) continue;
+    if (!findReactionByOutput(k)) continue; // only craftable intermediates
+    buildModes.set(k, 'buy');
+    bought.push(k);
   }
   saveModes();
-  const buyCount = buildModes.size;
-  document.getElementById('priceStatus').innerHTML =
-    `<span class="status-ok">Auto make-vs-buy</span> · ${buyCount} intermediates set to Buy`;
+  const sample = bought.slice(0, 8).map((n) => {
+    // restore display casing from recipe index if possible
+    const r = findReactionByOutput(n);
+    return r ? r.output.item : n;
+  });
+  status.innerHTML =
+    `<span class="status-ok">Auto make-vs-buy</span> · ${bought.length} set to Buy` +
+    (result.buildCount != null ? ` · ${result.buildCount} stay Build` : '') +
+    (sample.length ? ` · e.g. ${sample.join(', ')}` : ' · nothing cheaper to buy (or missing prices)') +
+    (result.missingPrices && result.missingPrices.length
+      ? ` · <span class="muted">${result.missingPrices.length} items missing prices</span>`
+      : '');
   calculate(false);
 }
 
@@ -1702,12 +1817,27 @@ function verifyCorrections() {
   }).join(' · ');
 }
 
-function init() {
+async function init() {
   const status = document.getElementById('loadStatus');
-  if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore) {
-    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data + industry-core.js next to index.html.</span>';
+  if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore || !window.EveAuth) {
+    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data, industry-core.js, and auth.js next to index.html.</span>';
     return;
   }
+
+  // Handle OAuth redirect before wiping URL params in the rest of init.
+  try {
+    const handled = await EveAuth.handleRedirectCallback();
+    if (handled) {
+      document.getElementById('structureStatus').innerHTML =
+        '<span class="status-ok">EVE login complete.</span> Structure markets can use this session.';
+    }
+  } catch (err) {
+    document.getElementById('structureStatus').innerHTML =
+      `<span class="status-bad">EVE login failed:</span> ${err.message}`;
+  }
+  await EveAuth.refreshIfNeeded();
+  refreshAuthUi();
+
   SDE = window.EVE_INDUSTRY_SDE;
   customRecipes = safeGet(STORAGE_KEY, []);
   loadBoard();
@@ -1721,6 +1851,7 @@ function init() {
   renderCustom();
   renderBrowse();
   refreshSelectionUi();
+  refreshAuthUi();
 
   document.getElementById('sdeStats').hidden = false;
   document.getElementById('sdeStats').innerHTML = `

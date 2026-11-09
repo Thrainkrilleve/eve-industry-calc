@@ -175,12 +175,17 @@
    * Root is always build.
    */
   function optimizeMakeVsBuy(rootItem, rootQty, opts) {
+    /** Only craftable intermediates appear here as build|buy. Raw mats are never listed. */
     const modes = {};
     const memo = new Map();
+    const missingPrices = new Set();
 
     function priceOf(name, qty) {
       const p = opts.unitPrice(name);
-      if (p == null || p <= 0) return null;
+      if (p == null || !(p > 0)) {
+        missingPrices.add(name);
+        return null;
+      }
       return p * qty;
     }
 
@@ -222,16 +227,20 @@
       const recipe = opts.findRecipe(item);
       const buy = priceOf(item, qty);
 
+      // Raw / uncraftable: always "buy" for costing, but don't record a mode toggle.
       if (!recipe) {
         const res = { cost: buy == null ? Infinity : buy, mode: 'buy' };
         memo.set(key, res);
-        modes[item.toLowerCase()] = 'buy';
         return res;
       }
 
       const built = costBuild(item, qty);
       let res = built;
-      if (buy != null && buy <= built.cost) {
+      // Prefer buy when market price is known and <= full build cost (incl. fees).
+      if (buy != null && Number.isFinite(built.cost) && buy <= built.cost) {
+        res = { cost: buy, mode: 'buy' };
+      } else if (buy != null && !Number.isFinite(built.cost)) {
+        // Build chain has missing prices; if we can buy the intermediate, do that.
         res = { cost: buy, mode: 'buy' };
       }
       modes[item.toLowerCase()] = res.mode;
@@ -239,11 +248,9 @@
       return res;
     }
 
-    // Force root to build, but still optimize children.
     const recipe = opts.findRecipe(rootItem);
     if (!recipe) {
-      modes[rootItem.toLowerCase()] = 'buy';
-      return modes;
+      return { modes, missingPrices: [...missingPrices], buyCount: 0, buildCount: 0 };
     }
 
     const runs = jobRuns(recipe.output.qty, rootQty);
@@ -255,7 +262,15 @@
       decide(inp.item, needed);
     }
     modes[rootItem.toLowerCase()] = 'build';
-    return modes;
+
+    let buyCount = 0;
+    let buildCount = 0;
+    for (const [k, v] of Object.entries(modes)) {
+      if (k === rootItem.toLowerCase()) continue;
+      if (v === 'buy') buyCount += 1;
+      else buildCount += 1;
+    }
+    return { modes, missingPrices: [...missingPrices], buyCount, buildCount };
   }
 
   function toMultibuy(lines) {
