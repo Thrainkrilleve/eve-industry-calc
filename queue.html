@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Industry Queue · EVE Industry</title>
+<link rel="stylesheet" href="styles.css?v=20261108h">
+</head>
+<body data-page="queue">
+<div class="container">
+  <nav class="app-nav">
+    <a href="index.html" data-nav="calc">Calculator</a>
+    <a href="queue.html" data-nav="queue">Queue</a>
+    <a href="hangar.html" data-nav="hangar">Hangar</a>
+    <span class="clock"><span id="localClock"></span> · <span id="eveClock"></span></span>
+  </nav>
+
+  <div class="row" style="justify-content:space-between;align-items:flex-start;">
+    <div>
+      <h1>Industry Queue</h1>
+      <p class="sub">Active and recent jobs across linked characters · local + EVE finish times.</p>
+    </div>
+    <div style="text-align:right;min-width:260px;">
+      <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
+      <div class="row" style="justify-content:flex-end;margin-bottom:0;">
+        <select id="characterSelect" hidden title="Linked characters" style="max-width:180px;"></select>
+        <button type="button" id="eveLoginBtn" onclick="eveLogin()">Login with EVE</button>
+        <button type="button" class="secondary" id="eveAddCharBtn" onclick="eveLogin()" hidden>Add character</button>
+        <button type="button" class="ghost" id="eveRemoveCharBtn" onclick="eveRemoveActive()" hidden>Remove</button>
+        <button type="button" class="ghost" id="eveLogoutBtn" onclick="eveLogoutAll()" hidden>Logout all</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:8px;">
+      <button type="button" onclick="refreshQueue()">Sync jobs</button>
+      <label>Scope</label>
+      <select id="esiSyncScope">
+        <option value="all">All linked characters</option>
+        <option value="active">Active character</option>
+      </select>
+      <label>Filter</label>
+      <select id="jobStatusFilter">
+        <option value="active">Active / delivered</option>
+        <option value="all">All statuses</option>
+        <option value="active_only">Active only</option>
+        <option value="ready">Ready / delivered</option>
+      </select>
+      <span id="esiSyncStatus" class="muted"></span>
+    </div>
+    <div class="stats" id="queueStats"></div>
+    <div class="esi-scroll tall" id="queueTableWrap">
+      <p class="empty-state">Sync to load industry jobs.</p>
+    </div>
+  </div>
+</div>
+
+<script src="config.js?v=20261108h"></script>
+<script src="eve-industry-data.js?v=20261108h"></script>
+<script src="industry-core.js?v=20261108h"></script>
+<script src="auth.js?v=20261108h"></script>
+<script src="app-common.js?v=20261108h"></script>
+<script>
+const Core = window.EveIndustryCore;
+const App = window.EveApp;
+const SDE = window.EVE_INDUSTRY_SDE;
+
+function typeName(id) {
+  return (SDE && SDE.names && SDE.names[String(id)]) || ('Type ' + id);
+}
+
+function facilityName(job, locations) {
+  const loc = (locations || []).find((l) => Number(l.id) === Number(job.facility_id));
+  return loc ? loc.name : ('#' + job.facility_id);
+}
+
+function renderQueue(now) {
+  const wrap = document.getElementById('queueTableWrap');
+  const stats = document.getElementById('queueStats');
+  const cache = App.loadEsiCache();
+  const jobs = (cache && cache.jobs) || [];
+  const locations = (cache && cache.locations) || [];
+  if (!jobs.length) {
+    wrap.innerHTML = '<p class="empty-state">No jobs in cache — sync while logged in.</p>';
+    stats.innerHTML = '';
+    return;
+  }
+
+  const filter = document.getElementById('jobStatusFilter').value;
+  const nowMs = (now || new Date()).getTime();
+  let rows = jobs.map((job) => {
+    const end = job.end_date ? new Date(job.end_date) : null;
+    const endMs = end ? end.getTime() : NaN;
+    const remaining = endMs - nowMs;
+    const status = String(job.status || '').toLowerCase();
+    return { job, end, endMs, remaining, status };
+  });
+
+  rows = rows.filter((r) => {
+    if (filter === 'all') return true;
+    if (filter === 'active_only') return r.status === 'active';
+    if (filter === 'ready') return r.status === 'ready' || r.status === 'delivered' || (r.status === 'active' && r.remaining <= 0);
+    // active + delivered-ish
+    return r.status === 'active' || r.status === 'ready' || r.status === 'delivered';
+  });
+
+  rows.sort((a, b) => {
+    const ae = Number.isFinite(a.endMs) ? a.endMs : Infinity;
+    const be = Number.isFinite(b.endMs) ? b.endMs : Infinity;
+    return ae - be;
+  });
+
+  const active = rows.filter((r) => r.status === 'active' && r.remaining > 0);
+  const next = active[0];
+  stats.innerHTML =
+    `<div class="stat"><b>${active.length}</b>active</div>` +
+    `<div class="stat"><b>${rows.length}</b>shown</div>` +
+    (next
+      ? `<div class="stat"><b>${App.formatRemaining(next.remaining)}</b>next finishes</div>`
+      : `<div class="stat"><b>—</b>next finishes</div>`);
+
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No jobs match this filter.</p>';
+    return;
+  }
+
+  const multi = new Set(jobs.map((j) => j._ownerId).filter(Boolean)).size > 1;
+  wrap.innerHTML =
+    `<table><thead><tr>
+      <th>Activity</th>${multi ? '<th>Pilot</th>' : ''}
+      <th>Blueprint / product</th><th>Runs</th><th>Status</th>
+      <th>Finishes (local)</th><th>Finishes (EVE)</th><th>Remaining</th><th>Facility</th>
+    </tr></thead><tbody>` +
+    rows.map((r) => {
+      const job = r.job;
+      const act = App.ACTIVITY_NAMES[job.activity_id] || ('Activity ' + job.activity_id);
+      const bpName = typeName(job.blueprint_type_id);
+      const product = job.product_type_id ? typeName(job.product_type_id) : '—';
+      const soon = r.status === 'active' && r.remaining > 0 && r.remaining < 3600000;
+      const done = r.remaining <= 0 || r.status === 'ready' || r.status === 'delivered';
+      const cls = [soon ? 'job-soon' : '', done ? 'job-done' : ''].filter(Boolean).join(' ');
+      return `<tr class="${cls}">
+        <td>${act}</td>
+        ${multi ? `<td class="muted">${job._ownerName || '—'}</td>` : ''}
+        <td>${bpName}<div class="muted" style="font-size:11px;">→ ${product}</div></td>
+        <td class="qty">${job.runs || 0}</td>
+        <td>${job.status || '—'}</td>
+        <td>${r.end ? App.formatLocal(r.end) : '—'}</td>
+        <td class="muted">${r.end ? App.formatEve(r.end) : '—'}</td>
+        <td class="qty">${App.formatRemaining(r.remaining)}</td>
+        <td class="muted">${facilityName(job, locations)}</td>
+      </tr>`;
+    }).join('') +
+    `</tbody></table>`;
+}
+
+async function refreshQueue() {
+  const status = document.getElementById('esiSyncStatus');
+  try {
+    await App.syncEsi({
+      statusEl: status,
+      onDone: () => renderQueue(new Date())
+    });
+  } catch (err) {
+    status.innerHTML = `<span class="status-bad">Sync failed:</span> ${err.message}`;
+  }
+}
+
+async function init() {
+  App.markActiveNav();
+  App.startClocks();
+  App.onClockTick = (now) => renderQueue(now);
+
+  try {
+    const handled = await EveAuth.handleRedirectCallback();
+    if (handled) {
+      document.getElementById('esiSyncStatus').innerHTML =
+        '<span class="status-ok">Character linked.</span> Sync jobs to refresh the queue.';
+    }
+  } catch (err) {
+    document.getElementById('esiSyncStatus').innerHTML =
+      `<span class="status-bad">Login failed:</span> ${err.message}`;
+  }
+  await EveAuth.refreshIfNeeded();
+  App.wireAuthChrome({ onCharacterSwitch: () => renderQueue(new Date()) });
+  document.getElementById('jobStatusFilter').addEventListener('change', () => renderQueue(new Date()));
+
+  const cache = App.loadEsiCache();
+  if (cache && cache.jobs && cache.jobs.length) {
+    document.getElementById('esiSyncStatus').innerHTML =
+      `<span class="muted">Cached sync ${App.formatLocal(cache.at)}</span>`;
+    renderQueue(new Date());
+  }
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+</script>
+</body>
+</html>

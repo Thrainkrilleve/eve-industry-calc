@@ -4,184 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EVE Online Industry Calculator</title>
-<style>
-  :root {
-    --bg: #0f1419;
-    --card: #1a2332;
-    --border: #2d3a4f;
-    --accent: #00d4ff;
-    --accent2: #7c5cff;
-    --text: #e8eef5;
-    --muted: #8b9bb4;
-    --success: #3dd68c;
-    --warn: #f5a623;
-    --danger: #f07178;
-  }
-  * { box-sizing: border-box; }
-  body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    margin: 0;
-    padding: 20px;
-    line-height: 1.5;
-  }
-  h1 { color: var(--accent); margin: 0 0 6px; font-size: 1.6rem; }
-  h2 { color: var(--accent2); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-top: 0; }
-  .sub { color: var(--muted); margin: 0 0 16px; }
-  .container { max-width: 1500px; margin: 0 auto; }
-  .panel {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 16px;
-  }
-  input, select, button, textarea {
-    background: #0d1117;
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 14px;
-  }
-  button {
-    background: var(--accent);
-    color: #000;
-    border: none;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  button:hover { opacity: 0.9; }
-  button.secondary { background: var(--accent2); color: #fff; }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
-  .row label { color: var(--muted); font-size: 13px; }
-  .search-wrap { position: relative; flex: 1; min-width: 260px; }
-  .search-wrap input { width: 100%; }
-  .suggestions {
-    position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
-    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
-    max-height: 280px; overflow-y: auto; display: none;
-  }
-  .suggestions.open { display: block; }
-  .suggestions button {
-    display: block; width: 100%; text-align: left; background: transparent;
-    color: var(--text); border: none; border-radius: 0; font-weight: 400; padding: 8px 12px;
-  }
-  .suggestions button:hover, .suggestions button.active { background: #243044; }
-  .suggestions .meta { color: var(--muted); font-size: 12px; margin-left: 8px; }
-  .flowchart { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 120px; }
-  .node {
-    background: #243044; border: 2px solid var(--accent); border-radius: 10px;
-    padding: 10px 14px; min-width: 190px; max-width: 280px; text-align: center;
-    cursor: pointer; user-select: none;
-    transition: box-shadow 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
-  }
-  .node:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.35); }
-  .node.raw { border-color: var(--success); }
-  .node.fuel { border-color: var(--warn); }
-  .node.intermediate { border-color: var(--accent2); }
-  .node.final { border-color: var(--accent); background: #1e3a5f; }
-  .node.buy-mode { border-style: dashed; opacity: 0.92; }
-  .node.selected {
-    box-shadow: 0 0 0 2px var(--warn), 0 0 18px rgba(245, 166, 35, 0.25);
-    border-color: var(--warn);
-  }
-  .node.more { cursor: default; opacity: 0.75; }
-  .node.more:hover { transform: none; box-shadow: none; }
-  .node small { color: var(--muted); display: block; font-size: 12px; }
-  .mode-btn {
-    margin-top: 6px; padding: 2px 8px; font-size: 11px; border-radius: 999px;
-    background: #0d1117; color: var(--accent); border: 1px solid var(--border); cursor: pointer;
-  }
-  .mode-btn.buy { color: var(--warn); }
-  .arrow { color: var(--muted); font-size: 18px; text-align: center; }
-  .level { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 8px 0; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  th { color: var(--muted); font-weight: 500; }
-  .qty { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); }
-  .isk { font-variant-numeric: tabular-nums; color: var(--success); }
-  .qty-input { width: 110px; padding: 6px 8px; font-variant-numeric: tabular-nums; }
-  .mode-select { padding: 4px 8px; font-size: 12px; }
-  .settings-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;
-  }
-  .settings-grid label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .settings-grid input, .settings-grid select { width: 100%; }
-  .add-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .add-form label { font-size: 12px; color: var(--muted); }
-  .full { grid-column: 1 / -1; }
-  .tag {
-    display: inline-block; background: #2d3a4f; padding: 2px 8px;
-    border-radius: 4px; font-size: 12px; margin: 2px;
-  }
-  .status-ok { color: var(--success); }
-  .status-bad { color: var(--danger); }
-  .muted { color: var(--muted); }
-  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
-  .stat { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 120px; }
-  .stat b { display: block; color: var(--accent); font-size: 1.2rem; }
-  .stat b.neg { color: var(--danger); }
-  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-  .pill {
-    border: 1px solid var(--border); background: #0d1117; color: var(--muted);
-    border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer;
-  }
-  .pill.active { border-color: var(--accent); color: var(--accent); }
-  #knownList { max-height: 220px; overflow-y: auto; }
-  .three-col { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; }
-  .hint {
-    background: #0d1117; border: 1px dashed var(--border); border-radius: 8px;
-    padding: 10px 12px; font-size: 13px; color: var(--muted); margin-bottom: 12px;
-  }
-  .empty-state { color: var(--muted); font-size: 14px; padding: 8px 0; }
-  .icon-btn {
-    padding: 4px 8px; font-size: 12px; background: transparent;
-    color: var(--muted); border: 1px solid var(--border);
-  }
-  .icon-btn:hover { color: var(--danger); border-color: var(--danger); }
-  .esi-scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
-  .esi-scroll table { margin-top: 0; font-size: 13px; }
-  .esi-scroll th { position: sticky; top: 0; background: var(--card); z-index: 1; }
-  .esi-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; }
-  .esi-tabs .pill { margin: 0; }
-  .esi-pane[hidden] { display: none !important; }
-  .profit-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
-  .dev-only { display: none; }
-  body.dev .dev-only { display: block; }
-  .site-footer {
-    margin-top: 24px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-    color: var(--muted);
-    font-size: 12px;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .site-footer button {
-    background: transparent;
-    color: var(--muted);
-    border: none;
-    padding: 0;
-    font-size: 12px;
-    font-weight: 400;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-  @media (max-width: 1100px) { .three-col { grid-template-columns: 1fr; } }
-  @media (max-width: 980px) { .add-form { grid-template-columns: 1fr; } }
-</style>
+<link rel="stylesheet" href="styles.css?v=20261108h">
 </head>
-<body>
+<body data-page="calc">
 <div class="container">
+  <nav class="app-nav">
+    <a href="index.html" data-nav="calc">Calculator</a>
+    <a href="queue.html" data-nav="queue">Queue</a>
+    <a href="hangar.html" data-nav="hangar">Hangar</a>
+    <span class="clock"><span id="localClock"></span> · <span id="eveClock"></span></span>
+  </nav>
   <div class="row" style="justify-content:space-between;align-items:flex-start;">
     <div>
       <h1>EVE Online Industry Calculator</h1>
-      <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · ESI blueprints / jobs / assets.</p>
+      <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · ESI shortfall / runs.</p>
     </div>
     <div style="text-align:right;min-width:260px;">
       <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
@@ -296,10 +132,11 @@
   </div>
 
   <div class="panel" id="characterEsiPanel">
-    <h2>Character (ESI)</h2>
+    <h2>Asset shortfall &amp; runnable jobs</h2>
     <p class="muted" style="margin-top:0;font-size:13px;">
-      Pull your blueprints, suggest markets from hangar locations, show industry jobs, and compare assets to the material list.
-      Add the new scopes on the Developers Portal app, then log out and log in once.
+      Sync assets, calculate a build, then see what you’re short and how many job runs current hangar stock supports.
+      Full blueprint / location inventory lives on <a href="hangar.html" style="color:var(--accent)">Hangar</a>;
+      jobs on <a href="queue.html" style="color:var(--accent)">Queue</a>.
     </p>
     <div class="row" style="margin-bottom:8px;">
       <button type="button" onclick="syncCharacterEsi()">Sync from EVE</button>
@@ -309,41 +146,12 @@
         <option value="all">All linked characters</option>
       </select>
       <button type="button" class="ghost" onclick="renderAssetShortfall()">Refresh shortfall</button>
+      <button type="button" class="ghost" onclick="copyShortfallMultibuy()">Copy shortfall multibuy</button>
       <span id="esiSyncStatus" class="muted"></span>
     </div>
-    <div class="esi-tabs" id="esiTabs">
-      <button type="button" class="pill active" data-esi-tab="bps">Blueprints</button>
-      <button type="button" class="pill" data-esi-tab="locs">Locations</button>
-      <button type="button" class="pill" data-esi-tab="jobs">Jobs</button>
-      <button type="button" class="pill" data-esi-tab="short">Asset shortfall</button>
-    </div>
-    <div class="esi-pane" data-esi-pane="bps">
-      <div class="row" style="margin-top:10px;margin-bottom:0;">
-        <label>Filter</label>
-        <input type="search" id="bpFilter" placeholder="Search blueprint / product" style="min-width:220px;">
-        <label>Show</label>
-        <select id="bpKindFilter">
-          <option value="all">All</option>
-          <option value="bpo">BPOs</option>
-          <option value="bpc">BPCs</option>
-          <option value="known">Known in calculator</option>
-        </select>
-      </div>
-      <div class="esi-scroll" id="bpTableWrap"><p class="empty-state">Sync while logged in to load blueprints.</p></div>
-    </div>
-    <div class="esi-pane" data-esi-pane="locs" hidden>
-      <div class="esi-scroll" id="locTableWrap"><p class="empty-state">Locations appear after sync from blueprints, assets, and jobs.</p></div>
-    </div>
-    <div class="esi-pane" data-esi-pane="jobs" hidden>
-      <div class="esi-scroll" id="jobsTableWrap"><p class="empty-state">No industry jobs loaded.</p></div>
-    </div>
-    <div class="esi-pane" data-esi-pane="short" hidden>
-      <div class="row" style="margin-top:10px;">
-        <button type="button" class="ghost" onclick="copyShortfallMultibuy()">Copy shortfall multibuy</button>
-        <span id="shortfallStatus" class="muted"></span>
-      </div>
-      <div class="esi-scroll" id="shortfallTableWrap"><p class="empty-state">Calculate a build, then sync assets (or refresh shortfall).</p></div>
-    </div>
+    <div class="stats" id="runsPossibleStats"></div>
+    <div id="shortfallStatus" class="muted" style="margin-bottom:8px;"></div>
+    <div class="esi-scroll" id="shortfallTableWrap"><p class="empty-state">Calculate a build, then sync assets (or refresh shortfall).</p></div>
   </div>
 
   <div class="panel dev-only" id="devPanel">
@@ -537,10 +345,11 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108g"></script>
-<script src="eve-industry-data.js?v=20261108g"></script>
-<script src="industry-core.js?v=20261108g"></script>
-<script src="auth.js?v=20261108g"></script>
+<script src="config.js?v=20261108h"></script>
+<script src="eve-industry-data.js?v=20261108h"></script>
+<script src="industry-core.js?v=20261108h"></script>
+<script src="auth.js?v=20261108h"></script>
+<script src="app-common.js?v=20261108h"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -851,14 +660,13 @@ function clearEsiCache() {
   esiAssetQty = {};
   esiLocations = [];
   lastShortfallLines = [];
-  const bp = document.getElementById('bpTableWrap');
-  const loc = document.getElementById('locTableWrap');
-  const jobs = document.getElementById('jobsTableWrap');
+  if (window.EveApp) EveApp.clearEsiCacheStorage();
   const short = document.getElementById('shortfallTableWrap');
-  if (bp) bp.innerHTML = '<p class="empty-state">Sync while logged in to load blueprints.</p>';
-  if (loc) loc.innerHTML = '<p class="empty-state">Locations appear after sync from blueprints, assets, and jobs.</p>';
-  if (jobs) jobs.innerHTML = '<p class="empty-state">No industry jobs loaded.</p>';
+  const runsStats = document.getElementById('runsPossibleStats');
+  const status = document.getElementById('shortfallStatus');
   if (short) short.innerHTML = '<p class="empty-state">Calculate a build, then sync assets (or refresh shortfall).</p>';
+  if (runsStats) runsStats.innerHTML = '';
+  if (status) status.textContent = '';
 }
 function refreshAuthUi() {
   const status = document.getElementById('authStatus');
@@ -979,94 +787,37 @@ async function resolveStructureName() {
   }
 }
 
-function switchEsiTab(tab) {
-  document.querySelectorAll('#esiTabs .pill').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.esiTab === tab);
-  });
-  document.querySelectorAll('#characterEsiPanel .esi-pane').forEach((pane) => {
-    pane.hidden = pane.dataset.esiPane !== tab;
-  });
-}
-
-function wireEsiTabs() {
-  document.getElementById('esiTabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-esi-tab]');
-    if (!btn) return;
-    switchEsiTab(btn.dataset.esiTab);
-  });
-  document.getElementById('bpFilter').addEventListener('input', renderBlueprintTable);
-  document.getElementById('bpKindFilter').addEventListener('change', renderBlueprintTable);
-}
-
-function tagOwner(rows, owner) {
-  return (rows || []).map((row) => ({
-    ...row,
-    _ownerId: owner.id,
-    _ownerName: owner.name
-  }));
-}
-
-async function syncOneCharacter(account) {
-  const token = await EveAuth.refreshIfNeeded(account.id);
-  if (!token) throw new Error(`Could not refresh token for ${account.name}`);
-  const owner = { id: account.id, name: account.name };
-  const [bps, assets, jobs] = await Promise.all([
-    Core.fetchCharacterBlueprints(account.id, token),
-    Core.fetchCharacterAssets(account.id, token),
-    Core.fetchCharacterIndustryJobs(account.id, token)
-  ]);
-  return {
-    owner,
-    token,
-    bps: tagOwner(bps, owner),
-    assets: tagOwner(assets, owner),
-    jobs: tagOwner(jobs, owner)
-  };
+function applyEsiCache(cache) {
+  if (!cache) return;
+  esiBlueprints = cache.blueprints || [];
+  esiAssets = cache.assets || [];
+  esiJobs = cache.jobs || [];
+  esiLocations = cache.locations || [];
+  esiAssetQty = cache.assetQty || {};
 }
 
 async function syncCharacterEsi() {
   const status = document.getElementById('esiSyncStatus');
-  const scope = (document.getElementById('esiSyncScope') || {}).value || 'active';
-  const accounts = EveAuth.listAccounts ? EveAuth.listAccounts() : [];
-  if (!accounts.length) {
-    status.innerHTML = '<span class="status-bad">Log in with EVE first.</span>';
-    return;
-  }
-  const targets = scope === 'all'
-    ? accounts
-    : accounts.filter((a) => a.active);
-  if (!targets.length) {
-    status.innerHTML = '<span class="status-bad">No active character selected.</span>';
-    return;
-  }
-
   const missing = missingIndustryScopes();
-  if (missing.length && scope === 'active') {
+  if (missing.length) {
     status.innerHTML =
-      '<span class="status-bad">Missing scopes on active character.</span> Add them on the Developers Portal, then use Add character / re-login: ' +
+      '<span class="status-bad">Missing scopes on active character.</span> Add them on the Developers Portal, then re-login: ' +
       missing.map((s) => `<code>${s}</code>`).join(', ');
   }
-
-  status.textContent = `Syncing ${targets.length} character${targets.length > 1 ? 's' : ''}…`;
   try {
-    const results = [];
-    for (const account of targets) {
-      results.push(await syncOneCharacter(account));
-    }
-    esiBlueprints = results.flatMap((r) => r.bps);
-    esiAssets = results.flatMap((r) => r.assets);
-    esiJobs = results.flatMap((r) => r.jobs);
-    esiAssetQty = Core.aggregateAssetsByType(esiAssets);
-    // Prefer active token for structure name lookups; fall back to first.
-    const active = results.find((r) => r.owner.id === (EveAuth.character() || {}).id) || results[0];
-    await rebuildEsiLocations(active.token);
-    renderBlueprintTable();
-    renderLocationTable();
-    renderJobsTable();
-    renderAssetShortfall();
-    const names = targets.map((t) => t.name).join(', ');
-    status.innerHTML =
-      `<span class="status-ok">Synced</span> ${names} · ${esiBlueprints.length} BP · ${esiAssets.length} assets · ${esiJobs.length} jobs · ${esiLocations.length} locations`;
+    const cache = await EveApp.syncEsi({
+      statusEl: status,
+      onDone: (c) => {
+        applyEsiCache(c);
+        // Suggest markets from synced locations.
+        for (const loc of c.locations || []) {
+          if (loc.kind !== 'structure') continue;
+          if (customStructures.some((s) => s.id === loc.id)) continue;
+        }
+        renderAssetShortfall();
+      }
+    });
+    if (cache) applyEsiCache(cache);
   } catch (err) {
     status.innerHTML = `<span class="status-bad">Sync failed:</span> ${err.message}`;
   }
@@ -1243,23 +994,53 @@ function renderJobsTable() {
     `</tbody></table>`;
 }
 
+function perRunRequirements() {
+  if (!selectedProduct) return {};
+  const recipe = findReactionByOutput(selectedProduct);
+  if (!recipe) return {};
+  const eff = effectiveMeTe(recipe.output.qty);
+  const opts = resolveOpts(eff.me);
+  const reqs = Core.resolveRequirements(selectedProduct, recipe.output.qty, opts);
+  for (const [mat, amount] of Object.entries(eff.inventMats || {})) {
+    // Invention mats are for expected invent jobs, not per manufacturing run — skip for run capacity.
+    void mat; void amount;
+  }
+  return reqs;
+}
+
 function renderAssetShortfall() {
   const wrap = document.getElementById('shortfallTableWrap');
   const status = document.getElementById('shortfallStatus');
+  const runsStats = document.getElementById('runsPossibleStats');
   const reqs = lastFullReqs || {};
   const entries = Object.entries(reqs);
   if (!entries.length) {
     lastShortfallLines = [];
     wrap.innerHTML = '<p class="empty-state">Calculate a build first.</p>';
     status.textContent = '';
+    if (runsStats) runsStats.innerHTML = '';
     return;
   }
   if (!Object.keys(esiAssetQty).length) {
     lastShortfallLines = [];
     wrap.innerHTML = '<p class="empty-state">Sync assets first (Sync from EVE).</p>';
     status.textContent = 'No asset cache yet.';
+    if (runsStats) runsStats.innerHTML = '';
     return;
   }
+
+  const perRun = perRunRequirements();
+  const possible = EveApp.runsPossibleFromAssets(perRun, esiAssetQty, nameToTypeId);
+  const recipe = findReactionByOutput(selectedProduct);
+  const desiredQty = parseFloat(document.getElementById('desiredQty').value) || 1;
+  const plannedRuns = recipe ? Core.jobRuns(recipe.output.qty, desiredQty) : 0;
+  if (runsStats) {
+    runsStats.innerHTML =
+      `<div class="stat"><b>${possible.runs}</b>runs possible now</div>` +
+      `<div class="stat"><b>${plannedRuns}</b>planned runs</div>` +
+      `<div class="stat"><b>${possible.limiter || '—'}</b>limiting mat</div>`;
+  }
+
   const lines = [];
   let missingTypes = 0;
   let shortTypes = 0;
@@ -1268,38 +1049,49 @@ function renderAssetShortfall() {
     const owned = tid != null ? (esiAssetQty[tid] || 0) : 0;
     if (tid == null) missingTypes += 1;
     const short = Math.max(0, Number(need) - owned);
-    if (short > 0) {
-      shortTypes += 1;
-      lines.push({ item, need: Number(need), owned, short, tid });
-    }
+    const per = Number(perRun[item]) || 0;
+    const canRuns = per > 0 ? Math.floor(owned / per) : '—';
+    if (short > 0) shortTypes += 1;
+    lines.push({ item, need: Number(need), owned, short, tid, per, canRuns });
   }
-  lines.sort((a, b) => b.short - a.short);
-  lastShortfallLines = lines;
-  if (!lines.length) {
-    wrap.innerHTML = '<p class="empty-state status-ok">You already have every listed material on this character.</p>';
-    status.innerHTML = `<span class="status-ok">Fully covered</span> · ${entries.length} materials checked`;
-    return;
-  }
+  lines.sort((a, b) => {
+    const ar = typeof a.canRuns === 'number' ? a.canRuns : 999999;
+    const br = typeof b.canRuns === 'number' ? b.canRuns : 999999;
+    return ar - br || b.short - a.short;
+  });
+  lastShortfallLines = lines.filter((l) => l.short > 0);
+
   wrap.innerHTML =
-    `<table><thead><tr><th>Material</th><th>Need</th><th>Owned</th><th>Short</th><th>Est. buy</th></tr></thead><tbody>` +
+    `<table><thead><tr>
+      <th>Material</th><th>Per run</th><th>Need (plan)</th><th>Owned</th><th>Short</th><th>Runs from stock</th><th>Est. buy short</th>
+    </tr></thead><tbody>` +
     lines.map((l) => {
       const p = unitPrice(l.item);
-      const isk = p != null ? p * l.short : null;
+      const isk = p != null && l.short > 0 ? p * l.short : null;
+      const lim = possible.limiter === l.item ? ' <span class="status-bad">← limit</span>' : '';
       return `<tr>
-        <td>${l.item}</td>
+        <td>${l.item}${lim}</td>
+        <td class="qty">${l.per ? formatQty(l.per) : '—'}</td>
         <td class="qty">${formatQty(l.need)}</td>
         <td class="qty">${formatQty(l.owned)}</td>
-        <td class="qty">${formatQty(l.short)}</td>
+        <td class="qty">${l.short ? formatQty(l.short) : '0'}</td>
+        <td class="qty">${l.canRuns === '—' ? '—' : formatQty(l.canRuns)}</td>
         <td class="isk">${isk != null ? formatIsk(isk) : '—'}</td>
       </tr>`;
     }).join('') +
     `</tbody></table>`;
-  const buyTotal = lines.reduce((sum, l) => {
+
+  const buyTotal = lastShortfallLines.reduce((sum, l) => {
     const p = unitPrice(l.item);
     return sum + (p != null ? p * l.short : 0);
   }, 0);
+  const cover = possible.runs >= plannedRuns;
   status.innerHTML =
-    `<span class="status-bad">${shortTypes} short</span> · est. ${formatIsk(buyTotal)} ISK` +
+    (cover
+      ? `<span class="status-ok">Stock covers ${plannedRuns} planned run(s)</span>`
+      : `<span class="status-bad">Stock covers ${possible.runs} / ${plannedRuns} planned run(s)</span>`) +
+    (possible.limiter ? ` · limited by <strong>${possible.limiter}</strong>` : '') +
+    (shortTypes ? ` · ${shortTypes} materials short · est. ${formatIsk(buyTotal)} ISK` : '') +
     (missingTypes ? ` · <span class="muted">${missingTypes} untyped names</span>` : '');
 }
 
@@ -2429,7 +2221,6 @@ function wireUi() {
     if (!e.target.closest('.search-wrap')) box.classList.remove('open');
   });
   document.getElementById('browseFilter').addEventListener('input', renderBrowse);
-  wireEsiTabs();
   const charSelect = document.getElementById('characterSelect');
   if (charSelect) charSelect.addEventListener('change', onCharacterSwitch);
 }
@@ -2450,10 +2241,13 @@ function verifyCorrections() {
 
 async function init() {
   const status = document.getElementById('loadStatus');
-  if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore || !window.EveAuth) {
-    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data, industry-core.js, auth.js, and config.js next to index.html.</span>';
+  if (!window.EVE_INDUSTRY_SDE || !window.EveIndustryCore || !window.EveAuth || !window.EveApp) {
+    status.innerHTML = '<span class="status-bad">Failed to load scripts. Keep data, industry-core.js, auth.js, app-common.js, and config.js next to index.html.</span>';
     return;
   }
+
+  EveApp.markActiveNav();
+  EveApp.startClocks();
 
   // Preserve OAuth ?code= handling before toggling other query params.
   const isOauthReturn = !!(new URLSearchParams(window.location.search).get('code'));
@@ -2488,6 +2282,7 @@ async function init() {
   renderBrowse();
   refreshSelectionUi();
   refreshAuthUi();
+  applyEsiCache(EveApp.loadEsiCache());
 
   document.getElementById('sdeStats').hidden = false;
   document.getElementById('sdeStats').innerHTML = `
@@ -2502,10 +2297,15 @@ async function init() {
     : `<span class="status-ok">Ready.</span> <span class="muted">${SDE.recipeCount.toLocaleString()} recipes loaded.</span>`;
   if (document.body.classList.contains('dev')) console.info('[eve-industry] formula checks:', checks);
 
-  const saved = safeGet(SELECTED_KEY, 'Tungsten Carbide');
-  if (findReactionByOutput(saved)) {
-    if (saved === 'Tungsten Carbide') document.getElementById('desiredQty').value = 10000;
-    setSelectedProduct(saved, true);
+  const pending = EveApp.consumePendingBlueprint();
+  if (pending && pending.typeId) {
+    applyOwnedBlueprint(pending.typeId, pending.me, pending.te, pending.runs);
+  } else {
+    const saved = safeGet(SELECTED_KEY, 'Tungsten Carbide');
+    if (findReactionByOutput(saved)) {
+      if (saved === 'Tungsten Carbide') document.getElementById('desiredQty').value = 10000;
+      setSelectedProduct(saved, true);
+    }
   }
 }
 

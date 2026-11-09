@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hangar · EVE Industry</title>
+<link rel="stylesheet" href="styles.css?v=20261108h">
+</head>
+<body data-page="hangar">
+<div class="container">
+  <nav class="app-nav">
+    <a href="index.html" data-nav="calc">Calculator</a>
+    <a href="queue.html" data-nav="queue">Queue</a>
+    <a href="hangar.html" data-nav="hangar">Hangar</a>
+    <span class="clock"><span id="localClock"></span> · <span id="eveClock"></span></span>
+  </nav>
+
+  <div class="row" style="justify-content:space-between;align-items:flex-start;">
+    <div>
+      <h1>Hangar</h1>
+      <p class="sub">Blueprints and assets by character, then location. Use a BP to open it in the calculator.</p>
+    </div>
+    <div style="text-align:right;min-width:260px;">
+      <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
+      <div class="row" style="justify-content:flex-end;margin-bottom:0;">
+        <select id="characterSelect" hidden title="Linked characters" style="max-width:180px;"></select>
+        <button type="button" id="eveLoginBtn" onclick="eveLogin()">Login with EVE</button>
+        <button type="button" class="secondary" id="eveAddCharBtn" onclick="eveLogin()" hidden>Add character</button>
+        <button type="button" class="ghost" id="eveRemoveCharBtn" onclick="eveRemoveActive()" hidden>Remove</button>
+        <button type="button" class="ghost" id="eveLogoutBtn" onclick="eveLogoutAll()" hidden>Logout all</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:8px;">
+      <button type="button" onclick="refreshHangar()">Sync hangar</button>
+      <label>Scope</label>
+      <select id="esiSyncScope">
+        <option value="all">All linked characters</option>
+        <option value="active">Active character</option>
+      </select>
+      <label>Show</label>
+      <select id="hangarView">
+        <option value="both">Blueprints + assets</option>
+        <option value="bp">Blueprints only</option>
+        <option value="assets">Assets only</option>
+      </select>
+      <input type="search" id="hangarFilter" placeholder="Filter name…" style="min-width:200px;">
+      <span id="esiSyncStatus" class="muted"></span>
+    </div>
+    <div id="hangarRoot"><p class="empty-state">Sync to load blueprints and assets.</p></div>
+  </div>
+</div>
+
+<script src="config.js?v=20261108h"></script>
+<script src="eve-industry-data.js?v=20261108h"></script>
+<script src="industry-core.js?v=20261108h"></script>
+<script src="auth.js?v=20261108h"></script>
+<script src="app-common.js?v=20261108h"></script>
+<script>
+const Core = window.EveIndustryCore;
+const App = window.EveApp;
+const SDE = window.EVE_INDUSTRY_SDE;
+
+let bpTypeToRecipes = new Map();
+let nameToTypeId = new Map();
+
+function typeName(id) {
+  return (SDE && SDE.names && SDE.names[String(id)]) || ('Type ' + id);
+}
+
+function rebuildMaps() {
+  bpTypeToRecipes = new Map();
+  nameToTypeId = new Map();
+  if (!SDE) return;
+  for (const [id, name] of Object.entries(SDE.names || {})) {
+    nameToTypeId.set(String(name).toLowerCase(), Number(id));
+  }
+  for (const r of SDE.recipes || []) {
+    const bp = Number(r.bp);
+    const productName = typeName(r.p);
+    if (!bpTypeToRecipes.has(bp)) bpTypeToRecipes.set(bp, []);
+    bpTypeToRecipes.get(bp).push({
+      productName,
+      outputQty: r.q,
+      materials: r.m || [],
+      activity: r.a
+    });
+  }
+}
+
+function recipeForBp(typeId) {
+  const list = bpTypeToRecipes.get(Number(typeId)) || [];
+  return list[0] || null;
+}
+
+function materialNeeded(baseQty, runs, me) {
+  return Core.materialNeeded(baseQty, runs, me, 1);
+}
+
+function runsForBlueprint(bp) {
+  const recipe = recipeForBp(bp.type_id);
+  const cache = App.loadEsiCache();
+  const assetQty = (cache && cache.assetQty) || {};
+  if (!recipe) return { runs: null, limiter: null, known: false };
+  const me = Number(bp.material_efficiency) || 0;
+  const reqs = {};
+  for (const [tid, qty] of recipe.materials) {
+    const name = typeName(tid);
+    reqs[name] = materialNeeded(qty, 1, recipe.activity === 'r' ? 0 : me);
+  }
+  const possible = App.runsPossibleFromAssets(reqs, assetQty, nameToTypeId);
+  const bpcCap = Number(bp.runs);
+  let runs = possible.runs;
+  if (bpcCap > 0) runs = Math.min(runs, bpcCap);
+  return { runs, limiter: possible.limiter, known: true, bpcCap };
+}
+
+function useBlueprint(typeId, me, te, runs) {
+  App.setPendingBlueprint({ typeId: Number(typeId), me: Number(me), te: Number(te), runs: Number(runs) });
+  window.location.href = 'index.html';
+}
+
+function renderHangar() {
+  const root = document.getElementById('hangarRoot');
+  const cache = App.loadEsiCache();
+  if (!cache || (!(cache.blueprints || []).length && !(cache.assets || []).length)) {
+    root.innerHTML = '<p class="empty-state">No hangar data yet — sync while logged in.</p>';
+    return;
+  }
+  const view = document.getElementById('hangarView').value;
+  const q = (document.getElementById('hangarFilter').value || '').trim().toLowerCase();
+  const tree = App.groupHangar(cache, Core);
+  if (!tree.length) {
+    root.innerHTML = '<p class="empty-state">Nothing to show.</p>';
+    return;
+  }
+
+  let html = '';
+  for (const char of tree) {
+    html += `<h3>${char.name}</h3>`;
+    if (!char.locations.length) {
+      html += '<p class="empty-state">No locations for this character.</p>';
+      continue;
+    }
+    for (const loc of char.locations) {
+      let bps = loc.blueprints || [];
+      let assets = loc.assets || [];
+      if (q) {
+        bps = bps.filter((bp) => {
+          const recipe = recipeForBp(bp.type_id);
+          const product = recipe ? recipe.productName : typeName(bp.type_id);
+          return product.toLowerCase().includes(q) || typeName(bp.type_id).toLowerCase().includes(q);
+        });
+        assets = assets.filter((a) => typeName(a.type_id).toLowerCase().includes(q));
+      }
+      if (view === 'bp') assets = [];
+      if (view === 'assets') bps = [];
+      if (!bps.length && !assets.length) continue;
+
+      html += `<div class="loc-block"><h4>${loc.name} <span class="muted">· ${loc.ref ? loc.ref.kind : 'other'}</span></h4>`;
+
+      if (bps.length) {
+        html += `<div class="muted" style="margin-bottom:4px;">Blueprints (${bps.length})</div>
+          <div class="esi-scroll"><table><thead><tr>
+            <th>Product / BP</th><th>ME</th><th>TE</th><th>Runs</th><th>Can run</th><th></th>
+          </tr></thead><tbody>`;
+        const sorted = [...bps].sort((a, b) => {
+          const pa = (recipeForBp(a.type_id) || {}).productName || typeName(a.type_id);
+          const pb = (recipeForBp(b.type_id) || {}).productName || typeName(b.type_id);
+          return pa.localeCompare(pb);
+        });
+        for (const bp of sorted.slice(0, 300)) {
+          const recipe = recipeForBp(bp.type_id);
+          const product = recipe ? recipe.productName : typeName(bp.type_id);
+          const me = Number(bp.material_efficiency) || 0;
+          const te = Number(bp.time_efficiency) || 0;
+          const runs = Number(bp.runs);
+          const can = runsForBlueprint(bp);
+          const canLabel = !can.known ? '—' : (can.runs + (can.limiter ? ` <span class="muted">(lim ${can.limiter})</span>` : ''));
+          html += `<tr>
+            <td>${product}${recipe ? '' : ' <span class="muted">(unmapped)</span>'}
+              <div class="muted" style="font-size:11px;">${typeName(bp.type_id)} · ${runs === -1 ? 'BPO' : 'BPC ×' + runs}</div></td>
+            <td class="qty">${me}</td>
+            <td class="qty">${te}</td>
+            <td class="qty">${runs === -1 ? '∞' : runs}</td>
+            <td class="qty">${canLabel}</td>
+            <td>${recipe
+              ? `<button type="button" class="ghost" onclick="useBlueprint(${bp.type_id},${me},${te},${runs})">Use in calculator</button>`
+              : ''}</td>
+          </tr>`;
+        }
+        html += '</tbody></table></div>';
+        if (sorted.length > 300) html += `<p class="muted">Showing 300 of ${sorted.length} blueprints.</p>`;
+      }
+
+      if (assets.length) {
+        // Aggregate duplicate type stacks in this location for readability.
+        const byType = new Map();
+        for (const a of assets) {
+          const tid = Number(a.type_id);
+          byType.set(tid, (byType.get(tid) || 0) + (Number(a.quantity) || 0));
+        }
+        const rows = [...byType.entries()]
+          .map(([tid, qty]) => ({ tid, qty, name: typeName(tid) }))
+          .sort((a, b) => b.qty - a.qty || a.name.localeCompare(b.name));
+        html += `<div class="muted" style="margin:10px 0 4px;">Assets (${rows.length} types)</div>
+          <div class="esi-scroll"><table><thead><tr><th>Item</th><th>Qty</th></tr></thead><tbody>`;
+        for (const row of rows.slice(0, 400)) {
+          html += `<tr><td>${row.name}</td><td class="qty">${App.formatQty(row.qty)}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+        if (rows.length > 400) html += `<p class="muted">Showing 400 of ${rows.length} asset types.</p>`;
+      }
+
+      html += '</div>';
+    }
+  }
+  root.innerHTML = html || '<p class="empty-state">No rows match this filter.</p>';
+}
+
+async function refreshHangar() {
+  const status = document.getElementById('esiSyncStatus');
+  try {
+    await App.syncEsi({
+      statusEl: status,
+      onDone: () => renderHangar()
+    });
+  } catch (err) {
+    status.innerHTML = `<span class="status-bad">Sync failed:</span> ${err.message}`;
+  }
+}
+
+async function init() {
+  App.markActiveNav();
+  App.startClocks();
+  rebuildMaps();
+
+  try {
+    const handled = await EveAuth.handleRedirectCallback();
+    if (handled) {
+      document.getElementById('esiSyncStatus').innerHTML =
+        '<span class="status-ok">Character linked.</span> Sync hangar to load inventory.';
+    }
+  } catch (err) {
+    document.getElementById('esiSyncStatus').innerHTML =
+      `<span class="status-bad">Login failed:</span> ${err.message}`;
+  }
+  await EveAuth.refreshIfNeeded();
+  App.wireAuthChrome({ onCharacterSwitch: renderHangar });
+  document.getElementById('hangarView').addEventListener('change', renderHangar);
+  document.getElementById('hangarFilter').addEventListener('input', renderHangar);
+
+  const cache = App.loadEsiCache();
+  if (cache) {
+    document.getElementById('esiSyncStatus').innerHTML =
+      `<span class="muted">Cached sync ${App.formatLocal(cache.at)}</span>`;
+    renderHangar();
+  }
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+else init();
+</script>
+</body>
+</html>

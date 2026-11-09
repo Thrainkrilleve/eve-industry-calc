@@ -21,14 +21,21 @@ Developer SSO setup (Client ID / callback) is hidden from the main UI — see [S
 - ME/TE + structure presets + SCI/SCC/tax job fees
 - Region hubs + player structure markets (SSO or manual token)
 - Multibuy export
+- Multi-character SSO profile
+- **Hangar** page: assets/BPs by character → location, runs-possible
+- **Queue** page: industry jobs with local + EVE finish times
+- Calculator shortfall: materials short + how many runs stock supports
 
 ## Files
 
 | File | Role |
 |------|------|
-| `index.html` | UI |
+| `index.html` | Calculator |
+| `queue.html` | Industry job queue |
+| `hangar.html` | Character hangar / locations |
+| `styles.css` / `app-common.js` | Shared UI + ESI cache |
 | `industry-core.js` | Math + market/ESI helpers |
-| `auth.js` | EVE SSO PKCE |
+| `auth.js` | EVE SSO PKCE (multi-character) |
 | `eve-industry-data.js` | Compact SDE payload |
 | `build_sde_data.py` | Rebuild SDE JS |
 | `SETUP-EVE-APP.md` | How to register the EVE app |
