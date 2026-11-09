@@ -74,17 +74,6 @@
     } catch {}
   }
 
-  function tokenAuthHeaders() {
-    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-    const secret = getClientSecret();
-    const clientId = getClientId();
-    if (secret && clientId) {
-      // Confidential client: Basic auth with client_id:client_secret
-      headers.Authorization = 'Basic ' + btoa(clientId + ':' + secret);
-    }
-    return headers;
-  }
-
   function loadAuth() {
     try {
       const raw = localStorage.getItem(AUTH_STORAGE);
@@ -163,20 +152,24 @@
     const pkce = JSON.parse(raw);
     if (state !== pkce.state) throw new Error('OAuth state mismatch.');
 
+    // CCP rejects credentials in BOTH Basic auth and body — pick one path.
+    const secret = getClientSecret();
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
-      client_id: pkce.clientId,
       code_verifier: pkce.verifier,
       redirect_uri: redirectUri()
     });
-    // Some confidential-client setups also accept secret in the body.
-    const secret = getClientSecret();
-    if (secret) body.set('client_secret', secret);
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    if (secret) {
+      headers.Authorization = 'Basic ' + btoa(pkce.clientId + ':' + secret);
+    } else {
+      body.set('client_id', pkce.clientId);
+    }
 
     const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
       method: 'POST',
-      headers: tokenAuthHeaders(),
+      headers,
       body
     });
     if (!res.ok) {
@@ -210,16 +203,20 @@
       saveAuth(null);
       return null;
     }
+    const secret = getClientSecret();
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
-      refresh_token: auth.refresh_token,
-      client_id: auth.client_id
+      refresh_token: auth.refresh_token
     });
-    const secret = getClientSecret();
-    if (secret) body.set('client_secret', secret);
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    if (secret) {
+      headers.Authorization = 'Basic ' + btoa(auth.client_id + ':' + secret);
+    } else {
+      body.set('client_id', auth.client_id);
+    }
     const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
       method: 'POST',
-      headers: tokenAuthHeaders(),
+      headers,
       body
     });
     if (!res.ok) {
