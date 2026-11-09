@@ -44,14 +44,26 @@
     return href;
   }
 
+  function getConfig() {
+    return global.EVE_INDUSTRY_CONFIG || {};
+  }
+
   function getClientId() {
     // Dev override (localStorage) wins, then committed config.js
     try {
       const override = localStorage.getItem(CLIENT_ID_KEY);
       if (override && override.trim()) return override.trim();
     } catch {}
-    const cfg = global.EVE_INDUSTRY_CONFIG || {};
-    return (cfg.clientId || '').trim();
+    return (getConfig().clientId || '').trim();
+  }
+  function getClientSecret() {
+    // Confidential web apps require this on the token endpoint.
+    // Prefer config.js; optional session override for local debugging only.
+    try {
+      const override = sessionStorage.getItem('eveIndustryClientSecret_v1');
+      if (override && override.trim()) return override.trim();
+    } catch {}
+    return (getConfig().clientSecret || '').trim();
   }
   function setClientId(id) {
     try {
@@ -59,6 +71,17 @@
       if (!v) localStorage.removeItem(CLIENT_ID_KEY);
       else localStorage.setItem(CLIENT_ID_KEY, v);
     } catch {}
+  }
+
+  function tokenAuthHeaders() {
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    const secret = getClientSecret();
+    const clientId = getClientId();
+    if (secret && clientId) {
+      // Confidential client: Basic auth with client_id:client_secret
+      headers.Authorization = 'Basic ' + btoa(clientId + ':' + secret);
+    }
+    return headers;
   }
 
   function loadAuth() {
@@ -143,15 +166,16 @@
       grant_type: 'authorization_code',
       code,
       client_id: pkce.clientId,
-      code_verifier: pkce.verifier
-      // redirect_uri is required by some IdPs; CCP docs include it in authorize step.
+      code_verifier: pkce.verifier,
+      redirect_uri: redirectUri()
     });
-    // CCP token endpoint expects redirect_uri on exchange as well.
-    body.set('redirect_uri', redirectUri());
+    // Some confidential-client setups also accept secret in the body.
+    const secret = getClientSecret();
+    if (secret) body.set('client_secret', secret);
 
     const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: tokenAuthHeaders(),
       body
     });
     if (!res.ok) {
@@ -190,9 +214,11 @@
       refresh_token: auth.refresh_token,
       client_id: auth.client_id
     });
+    const secret = getClientSecret();
+    if (secret) body.set('client_secret', secret);
     const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: tokenAuthHeaders(),
       body
     });
     if (!res.ok) {

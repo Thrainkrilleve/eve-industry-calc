@@ -20,11 +20,12 @@ https://thrainkrilleve.github.io/eve-industry-calc/
 
 ## 3. Configure production
 
-Put the Client ID in `config.js`:
+Put credentials in `config.js`:
 
 ```js
 window.EVE_INDUSTRY_CONFIG = {
   clientId: 'YOUR_CLIENT_ID_HERE',
+  clientSecret: 'YOUR_CLIENT_SECRET_HERE', // required for confidential web apps
   scopes: [
     'publicData',
     'esi-markets.structure_markets.v1',
@@ -33,7 +34,7 @@ window.EVE_INDUSTRY_CONFIG = {
 };
 ```
 
-Commit and push so GitHub Pages picks it up. Client IDs are public for PKCE apps; never commit a client secret.
+**Security note:** a Client Secret in GitHub Pages is world-readable. Use this only briefly, then rotate the secret, or recreate as a **native PKCE** app (no secret) / proxy token exchange through a backend.
 
 ## 4. Local / temporary override
 
