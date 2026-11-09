@@ -142,6 +142,12 @@
     color: var(--muted); border: 1px solid var(--border);
   }
   .icon-btn:hover { color: var(--danger); border-color: var(--danger); }
+  .esi-scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
+  .esi-scroll table { margin-top: 0; font-size: 13px; }
+  .esi-scroll th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+  .esi-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; }
+  .esi-tabs .pill { margin: 0; }
+  .esi-pane[hidden] { display: none !important; }
   .profit-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
   .dev-only { display: none; }
   body.dev .dev-only { display: block; }
@@ -175,7 +181,7 @@
   <div class="row" style="justify-content:space-between;align-items:flex-start;">
     <div>
       <h1>EVE Online Industry Calculator</h1>
-      <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · job fees.</p>
+      <p class="sub">SDE reactions + manufacturing · invention/T2 · selection board · make-vs-buy · hub &amp; structure markets · ESI blueprints / jobs / assets.</p>
     </div>
     <div style="text-align:right;min-width:220px;">
       <div id="authStatus" class="muted" style="font-size:13px;margin-bottom:6px;">Not logged in</div>
@@ -282,6 +288,52 @@
       <span id="structureStatus" class="muted"></span>
     </div>
     <div id="customStructureList" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="panel" id="characterEsiPanel">
+    <h2>Character (ESI)</h2>
+    <p class="muted" style="margin-top:0;font-size:13px;">
+      Pull your blueprints, suggest markets from hangar locations, show industry jobs, and compare assets to the material list.
+      Add the new scopes on the Developers Portal app, then log out and log in once.
+    </p>
+    <div class="row" style="margin-bottom:8px;">
+      <button type="button" onclick="syncCharacterEsi()">Sync from EVE</button>
+      <button type="button" class="ghost" onclick="renderAssetShortfall()">Refresh shortfall</button>
+      <span id="esiSyncStatus" class="muted"></span>
+    </div>
+    <div class="esi-tabs" id="esiTabs">
+      <button type="button" class="pill active" data-esi-tab="bps">Blueprints</button>
+      <button type="button" class="pill" data-esi-tab="locs">Locations</button>
+      <button type="button" class="pill" data-esi-tab="jobs">Jobs</button>
+      <button type="button" class="pill" data-esi-tab="short">Asset shortfall</button>
+    </div>
+    <div class="esi-pane" data-esi-pane="bps">
+      <div class="row" style="margin-top:10px;margin-bottom:0;">
+        <label>Filter</label>
+        <input type="search" id="bpFilter" placeholder="Search blueprint / product" style="min-width:220px;">
+        <label>Show</label>
+        <select id="bpKindFilter">
+          <option value="all">All</option>
+          <option value="bpo">BPOs</option>
+          <option value="bpc">BPCs</option>
+          <option value="known">Known in calculator</option>
+        </select>
+      </div>
+      <div class="esi-scroll" id="bpTableWrap"><p class="empty-state">Sync while logged in to load blueprints.</p></div>
+    </div>
+    <div class="esi-pane" data-esi-pane="locs" hidden>
+      <div class="esi-scroll" id="locTableWrap"><p class="empty-state">Locations appear after sync from blueprints, assets, and jobs.</p></div>
+    </div>
+    <div class="esi-pane" data-esi-pane="jobs" hidden>
+      <div class="esi-scroll" id="jobsTableWrap"><p class="empty-state">No industry jobs loaded.</p></div>
+    </div>
+    <div class="esi-pane" data-esi-pane="short" hidden>
+      <div class="row" style="margin-top:10px;">
+        <button type="button" class="ghost" onclick="copyShortfallMultibuy()">Copy shortfall multibuy</button>
+        <span id="shortfallStatus" class="muted"></span>
+      </div>
+      <div class="esi-scroll" id="shortfallTableWrap"><p class="empty-state">Calculate a build, then sync assets (or refresh shortfall).</p></div>
+    </div>
   </div>
 
   <div class="panel dev-only" id="devPanel">
@@ -475,10 +527,10 @@
   </div>
 </div>
 
-<script src="config.js?v=20261108e"></script>
-<script src="eve-industry-data.js?v=20261108e"></script>
-<script src="industry-core.js?v=20261108e"></script>
-<script src="auth.js?v=20261108e"></script>
+<script src="config.js?v=20261108f"></script>
+<script src="eve-industry-data.js?v=20261108f"></script>
+<script src="industry-core.js?v=20261108f"></script>
+<script src="auth.js?v=20261108f"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -515,6 +567,23 @@ let lastInventionExpect = null;
 let priceCache = {};
 let adjustedPrices = {};
 let priceFetchToken = 0;
+/** blueprintTypeId -> [{ productName, recipe }] */
+let bpTypeToRecipes = new Map();
+let esiBlueprints = [];
+let esiAssets = [];
+let esiJobs = [];
+let esiAssetQty = {};
+/** @type {Array<{kind:string,id:number,name:string,sources:string[]}>} */
+let esiLocations = [];
+let lastShortfallLines = [];
+const ACTIVITY_NAMES = {
+  1: 'Manufacturing',
+  3: 'TE research',
+  4: 'ME research',
+  5: 'Copying',
+  7: 'Reverse engineer',
+  8: 'Invention'
+};
 
 function safeGet(key, fallback) {
   try {
@@ -585,6 +654,7 @@ function rebuildIndex() {
   productMeta = new Map();
   nameToTypeId = new Map();
   inventionsByItem = new Map();
+  bpTypeToRecipes = new Map();
   if (SDE) {
     for (const [id, name] of Object.entries(SDE.names)) {
       nameToTypeId.set(name.toLowerCase(), Number(id));
@@ -596,6 +666,9 @@ function rebuildIndex() {
         recipeIndex.set(key, calc);
         productMeta.set(key, calc);
       }
+      const bp = Number(r.bp);
+      if (!bpTypeToRecipes.has(bp)) bpTypeToRecipes.set(bp, []);
+      bpTypeToRecipes.get(bp).push({ productName: calc.output.item, recipe: calc });
     }
     for (const inv of SDE.inventions || []) {
       if (!inventionsByItem.has(inv.item)) inventionsByItem.set(inv.item, []);
@@ -608,6 +681,59 @@ function rebuildIndex() {
     recipeIndex.set(key, calc);
     productMeta.set(key, calc);
   }
+}
+
+function characterScopes() {
+  const c = EveAuth.character && EveAuth.character();
+  const raw = c && c.scp;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  return String(raw).split(/\s+/).filter(Boolean);
+}
+
+function hasScope(scope) {
+  const list = characterScopes();
+  return list.includes(scope) || list.includes(scope.replace(/^esi-/, ''));
+}
+
+function missingIndustryScopes() {
+  const needed = [
+    'esi-characters.read_blueprints.v1',
+    'esi-assets.read_assets.v1',
+    'esi-industry.read_character_jobs.v1'
+  ];
+  return needed.filter((s) => !hasScope(s));
+}
+
+async function ensureEsiToken() {
+  if (window.EveAuth && EveAuth.refreshIfNeeded) {
+    const t = await EveAuth.refreshIfNeeded();
+    if (t) return t;
+  }
+  return getEsiToken();
+}
+
+function recipesForBlueprintType(bpTypeId) {
+  return bpTypeToRecipes.get(Number(bpTypeId)) || [];
+}
+
+function describeBlueprint(bp) {
+  const recipes = recipesForBlueprintType(bp.type_id);
+  const product = recipes[0] ? recipes[0].productName : typeName(bp.type_id);
+  const isBpo = Number(bp.runs) === -1;
+  return {
+    product,
+    recipes,
+    known: recipes.length > 0,
+    kind: isBpo ? 'bpo' : 'bpc',
+    label: isBpo ? 'BPO' : `BPC ×${bp.runs}`,
+    me: Number(bp.material_efficiency) || 0,
+    te: Number(bp.time_efficiency) || 0,
+    runs: Number(bp.runs),
+    typeId: Number(bp.type_id),
+    itemId: Number(bp.item_id),
+    locationId: Number(bp.location_id)
+  };
 }
 
 function getEsiToken() {
@@ -704,7 +830,11 @@ function refreshAuthUi() {
   }
   if (EveAuth.isLoggedIn()) {
     const c = EveAuth.character();
-    status.innerHTML = `<span class="status-ok">Logged in:</span> ${c && c.name ? c.name : 'Capsuleer'}`;
+    const missing = missingIndustryScopes();
+    status.innerHTML = `<span class="status-ok">Logged in:</span> ${c && c.name ? c.name : 'Capsuleer'}` +
+      (missing.length
+        ? `<div class="muted" style="margin-top:4px;">Re-login after adding blueprint/assets/jobs scopes on the Developers Portal.</div>`
+        : '');
     loginBtn.hidden = true;
     logoutBtn.hidden = false;
   } else {
@@ -764,9 +894,9 @@ function renderCustomStructures() {
 }
 async function resolveStructureName() {
   const id = Number(String(document.getElementById('structureIdInput').value).trim());
-  const token = getEsiToken();
+  const token = await ensureEsiToken();
   if (!id) return alert('Enter a structure ID first.');
-  if (!token) return alert('Save an ESI access token first (needs universe.read_structures for name lookup).');
+  if (!token) return alert('Log in with EVE first (needs universe.read_structures for name lookup).');
   document.getElementById('structureStatus').textContent = 'Looking up structure name…';
   try {
     const name = await Core.fetchStructureName(id, token);
@@ -781,6 +911,296 @@ async function resolveStructureName() {
     document.getElementById('structureStatus').innerHTML =
       `<span class="status-bad">Lookup failed:</span> ${err.message}`;
   }
+}
+
+function switchEsiTab(tab) {
+  document.querySelectorAll('#esiTabs .pill').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.esiTab === tab);
+  });
+  document.querySelectorAll('#characterEsiPanel .esi-pane').forEach((pane) => {
+    pane.hidden = pane.dataset.esiPane !== tab;
+  });
+}
+
+function wireEsiTabs() {
+  document.getElementById('esiTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-esi-tab]');
+    if (!btn) return;
+    switchEsiTab(btn.dataset.esiTab);
+  });
+  document.getElementById('bpFilter').addEventListener('input', renderBlueprintTable);
+  document.getElementById('bpKindFilter').addEventListener('change', renderBlueprintTable);
+}
+
+async function syncCharacterEsi() {
+  const status = document.getElementById('esiSyncStatus');
+  const token = await ensureEsiToken();
+  const char = EveAuth.character && EveAuth.character();
+  if (!token || !char || !char.id) {
+    status.innerHTML = '<span class="status-bad">Log in with EVE first.</span>';
+    return;
+  }
+  const missing = missingIndustryScopes();
+  if (missing.length) {
+    status.innerHTML =
+      '<span class="status-bad">Missing scopes.</span> Add them on the Developers Portal, then logout/login: ' +
+      missing.map((s) => `<code>${s}</code>`).join(', ');
+  }
+  status.textContent = 'Syncing blueprints, assets, jobs…';
+  try {
+    const [bps, assets, jobs] = await Promise.all([
+      Core.fetchCharacterBlueprints(char.id, token),
+      Core.fetchCharacterAssets(char.id, token),
+      Core.fetchCharacterIndustryJobs(char.id, token)
+    ]);
+    esiBlueprints = bps || [];
+    esiAssets = assets || [];
+    esiJobs = jobs || [];
+    esiAssetQty = Core.aggregateAssetsByType(esiAssets);
+    await rebuildEsiLocations(token);
+    renderBlueprintTable();
+    renderLocationTable();
+    renderJobsTable();
+    renderAssetShortfall();
+    status.innerHTML =
+      `<span class="status-ok">Synced</span> ${esiBlueprints.length} BP · ${esiAssets.length} assets · ${esiJobs.length} jobs · ${esiLocations.length} locations`;
+  } catch (err) {
+    status.innerHTML = `<span class="status-bad">Sync failed:</span> ${err.message}`;
+  }
+}
+
+async function rebuildEsiLocations(token) {
+  const assetByItemId = new Map();
+  for (const a of esiAssets) assetByItemId.set(Number(a.item_id), a);
+
+  const counts = new Map();
+  function addRef(ref, source) {
+    if (!ref || (ref.kind !== 'station' && ref.kind !== 'structure')) return;
+    const key = ref.kind + ':' + ref.id;
+    if (!counts.has(key)) counts.set(key, { kind: ref.kind, id: ref.id, sources: new Set() });
+    counts.get(key).sources.add(source);
+  }
+
+  for (const bp of esiBlueprints) {
+    addRef(Core.resolveLocationRef(bp.location_id, assetByItemId), 'blueprint');
+  }
+  for (const a of esiAssets) {
+    if (a.location_type === 'station' || Core.isNpcStationId(a.location_id)) {
+      addRef({ kind: 'station', id: Number(a.location_id) }, 'asset');
+    } else if (Core.isLikelyStructureId(a.location_id)) {
+      addRef({ kind: 'structure', id: Number(a.location_id) }, 'asset');
+    }
+  }
+  for (const job of esiJobs) {
+    const fid = Number(job.facility_id);
+    if (Core.isNpcStationId(fid)) addRef({ kind: 'station', id: fid }, 'job');
+    else if (Core.isLikelyStructureId(fid)) addRef({ kind: 'structure', id: fid }, 'job');
+  }
+
+  const refs = [...counts.values()].map((r) => ({ kind: r.kind, id: r.id }));
+  const names = await Core.resolveLocationNames(refs, token);
+  esiLocations = [...counts.values()]
+    .map((r) => ({
+      kind: r.kind,
+      id: r.id,
+      name: names[r.kind + ':' + r.id] || (r.kind + ' ' + r.id),
+      sources: [...r.sources]
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function renderBlueprintTable() {
+  const wrap = document.getElementById('bpTableWrap');
+  if (!esiBlueprints.length) {
+    wrap.innerHTML = '<p class="empty-state">Sync while logged in to load blueprints.</p>';
+    return;
+  }
+  const q = (document.getElementById('bpFilter').value || '').trim().toLowerCase();
+  const kind = document.getElementById('bpKindFilter').value;
+  const rows = esiBlueprints.map(describeBlueprint).filter((d) => {
+    if (kind === 'bpo' && d.kind !== 'bpo') return false;
+    if (kind === 'bpc' && d.kind !== 'bpc') return false;
+    if (kind === 'known' && !d.known) return false;
+    if (!q) return true;
+    return d.product.toLowerCase().includes(q) || typeName(d.typeId).toLowerCase().includes(q);
+  });
+  rows.sort((a, b) => a.product.localeCompare(b.product) || b.me - a.me || b.te - a.te);
+  if (!rows.length) {
+    wrap.innerHTML = '<p class="empty-state">No blueprints match this filter.</p>';
+    return;
+  }
+  wrap.innerHTML =
+    `<table><thead><tr>
+      <th>Product / BP</th><th>ME</th><th>TE</th><th>Runs</th><th></th>
+    </tr></thead><tbody>` +
+    rows.slice(0, 400).map((d) => {
+      const disabled = d.known ? '' : 'disabled title="No matching SDE recipe"';
+      return `<tr>
+        <td>${d.product}${d.known ? '' : ' <span class="muted">(unmapped)</span>'}
+          <div class="muted" style="font-size:11px;">${typeName(d.typeId)} · ${d.label}</div></td>
+        <td class="qty">${d.me}</td>
+        <td class="qty">${d.te}</td>
+        <td class="qty">${d.runs === -1 ? '∞' : d.runs}</td>
+        <td><button type="button" class="ghost" ${disabled}
+          onclick="applyOwnedBlueprint(${d.typeId},${d.me},${d.te},${d.runs})">Use</button></td>
+      </tr>`;
+    }).join('') +
+    `</tbody></table>` +
+    (rows.length > 400 ? `<p class="muted">Showing 400 of ${rows.length}. Narrow the filter.</p>` : '');
+}
+
+function applyOwnedBlueprint(bpTypeId, me, te, runs) {
+  const recipes = recipesForBlueprintType(bpTypeId);
+  if (!recipes.length) return alert('No calculator recipe for that blueprint type.');
+  const pick = recipes[0];
+  document.getElementById('meInput').value = me;
+  document.getElementById('teInput').value = te;
+  if (Number(runs) > 0) {
+    const outPerRun = pick.recipe.output.qty || 1;
+    document.getElementById('desiredQty').value = Number(runs) * outPerRun;
+  }
+  saveSettings();
+  setSelectedProduct(pick.productName, true);
+  document.getElementById('esiSyncStatus').innerHTML =
+    `<span class="status-ok">Applied</span> ${pick.productName} · ME ${me} / TE ${te}` +
+    (Number(runs) > 0 ? ` · ${runs} BPC run(s)` : '');
+}
+
+function renderLocationTable() {
+  const wrap = document.getElementById('locTableWrap');
+  if (!esiLocations.length) {
+    wrap.innerHTML = '<p class="empty-state">No station/structure locations found yet.</p>';
+    return;
+  }
+  wrap.innerHTML =
+    `<table><thead><tr><th>Location</th><th>Type</th><th>Seen in</th><th></th></tr></thead><tbody>` +
+    esiLocations.map((loc) => {
+      const already = customStructures.some((s) => s.id === loc.id);
+      const btn = loc.kind === 'structure'
+        ? (already
+          ? `<span class="muted">In list</span>`
+          : `<button type="button" class="ghost" onclick="addSuggestedStructure(${loc.id})">Add market</button>`)
+        : `<span class="muted">NPC hub</span>`;
+      return `<tr>
+        <td>${loc.name}<div class="muted" style="font-size:11px;">#${loc.id}</div></td>
+        <td>${loc.kind}</td>
+        <td class="muted">${loc.sources.join(', ')}</td>
+        <td>${btn}</td>
+      </tr>`;
+    }).join('') +
+    `</tbody></table>`;
+}
+
+function addSuggestedStructure(id) {
+  const sid = Number(id);
+  if (!Number.isFinite(sid) || sid <= 0) return;
+  const loc = esiLocations.find((l) => l.id === sid);
+  const name = (loc && loc.name) || ('Structure ' + sid);
+  customStructures = customStructures.filter((s) => s.id !== sid);
+  customStructures.push({ id: sid, name });
+  saveStructures();
+  document.getElementById('hubSelect').value = 'struct:' + sid;
+  document.getElementById('esiSyncStatus').innerHTML =
+    `<span class="status-ok">Added market</span> ${name} — refresh prices to use it.`;
+  renderLocationTable();
+}
+
+function renderJobsTable() {
+  const wrap = document.getElementById('jobsTableWrap');
+  if (!esiJobs.length) {
+    wrap.innerHTML = '<p class="empty-state">No industry jobs returned (idle, or scope missing).</p>';
+    return;
+  }
+  const rows = [...esiJobs].sort((a, b) => String(a.end_date || '').localeCompare(String(b.end_date || '')));
+  wrap.innerHTML =
+    `<table><thead><tr>
+      <th>Activity</th><th>Blueprint / product</th><th>Runs</th><th>Status</th><th>Ends</th><th>Facility</th>
+    </tr></thead><tbody>` +
+    rows.map((job) => {
+      const act = ACTIVITY_NAMES[job.activity_id] || ('Activity ' + job.activity_id);
+      const bpName = typeName(job.blueprint_type_id);
+      const product = job.product_type_id ? typeName(job.product_type_id) : '—';
+      const facility = esiLocations.find((l) => l.id === Number(job.facility_id));
+      const end = job.end_date ? new Date(job.end_date).toLocaleString() : '—';
+      return `<tr>
+        <td>${act}</td>
+        <td>${bpName}<div class="muted" style="font-size:11px;">→ ${product}</div></td>
+        <td class="qty">${job.runs || 0}</td>
+        <td>${job.status || '—'}</td>
+        <td class="muted">${end}</td>
+        <td class="muted">${facility ? facility.name : ('#' + job.facility_id)}</td>
+      </tr>`;
+    }).join('') +
+    `</tbody></table>`;
+}
+
+function renderAssetShortfall() {
+  const wrap = document.getElementById('shortfallTableWrap');
+  const status = document.getElementById('shortfallStatus');
+  const reqs = lastFullReqs || {};
+  const entries = Object.entries(reqs);
+  if (!entries.length) {
+    lastShortfallLines = [];
+    wrap.innerHTML = '<p class="empty-state">Calculate a build first.</p>';
+    status.textContent = '';
+    return;
+  }
+  if (!Object.keys(esiAssetQty).length) {
+    lastShortfallLines = [];
+    wrap.innerHTML = '<p class="empty-state">Sync assets first (Sync from EVE).</p>';
+    status.textContent = 'No asset cache yet.';
+    return;
+  }
+  const lines = [];
+  let missingTypes = 0;
+  let shortTypes = 0;
+  for (const [item, need] of entries) {
+    const tid = nameToTypeId.get(item.toLowerCase());
+    const owned = tid != null ? (esiAssetQty[tid] || 0) : 0;
+    if (tid == null) missingTypes += 1;
+    const short = Math.max(0, Number(need) - owned);
+    if (short > 0) {
+      shortTypes += 1;
+      lines.push({ item, need: Number(need), owned, short, tid });
+    }
+  }
+  lines.sort((a, b) => b.short - a.short);
+  lastShortfallLines = lines;
+  if (!lines.length) {
+    wrap.innerHTML = '<p class="empty-state status-ok">You already have every listed material on this character.</p>';
+    status.innerHTML = `<span class="status-ok">Fully covered</span> · ${entries.length} materials checked`;
+    return;
+  }
+  wrap.innerHTML =
+    `<table><thead><tr><th>Material</th><th>Need</th><th>Owned</th><th>Short</th><th>Est. buy</th></tr></thead><tbody>` +
+    lines.map((l) => {
+      const p = unitPrice(l.item);
+      const isk = p != null ? p * l.short : null;
+      return `<tr>
+        <td>${l.item}</td>
+        <td class="qty">${formatQty(l.need)}</td>
+        <td class="qty">${formatQty(l.owned)}</td>
+        <td class="qty">${formatQty(l.short)}</td>
+        <td class="isk">${isk != null ? formatIsk(isk) : '—'}</td>
+      </tr>`;
+    }).join('') +
+    `</tbody></table>`;
+  const buyTotal = lines.reduce((sum, l) => {
+    const p = unitPrice(l.item);
+    return sum + (p != null ? p * l.short : 0);
+  }, 0);
+  status.innerHTML =
+    `<span class="status-bad">${shortTypes} short</span> · est. ${formatIsk(buyTotal)} ISK` +
+    (missingTypes ? ` · <span class="muted">${missingTypes} untyped names</span>` : '');
+}
+
+function copyShortfallMultibuy() {
+  if (!lastShortfallLines.length) return alert('No shortfall to copy — sync assets and calculate a build.');
+  const text = Core.toMultibuy(lastShortfallLines.map((l) => ({ item: l.item, qty: l.short })));
+  navigator.clipboard.writeText(text).then(
+    () => alert('Shortfall multibuy copied.'),
+    () => prompt('Copy this multibuy list:', text)
+  );
 }
 function refreshHubSelect() {
   const hubSelect = document.getElementById('hubSelect');
@@ -1737,6 +2157,7 @@ function calculate(fetchPrices = true) {
     lastFullReqs,
     fees.total
   );
+  if (Object.keys(esiAssetQty).length) renderAssetShortfall();
   refreshSelectionUi();
   if (fetchPrices) queuePriceRefresh();
 }
@@ -1899,6 +2320,7 @@ function wireUi() {
     if (!e.target.closest('.search-wrap')) box.classList.remove('open');
   });
   document.getElementById('browseFilter').addEventListener('input', renderBrowse);
+  wireEsiTabs();
 }
 
 function verifyCorrections() {
@@ -1931,6 +2353,8 @@ async function init() {
     if (handled) {
       document.getElementById('structureStatus').innerHTML =
         '<span class="status-ok">EVE login complete.</span>';
+      document.getElementById('esiSyncStatus').innerHTML =
+        '<span class="status-ok">Logged in.</span> Click Sync from EVE to pull blueprints / jobs / assets.';
     }
   } catch (err) {
     document.getElementById('structureStatus').innerHTML =

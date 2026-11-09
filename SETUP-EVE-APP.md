@@ -19,6 +19,11 @@ Do **not** use a confidential/web app with a client secret on GitHub Pages. CCP 
 - `publicData`
 - `esi-markets.structure_markets.v1`
 - `esi-universe.read_structures.v1`
+- `esi-characters.read_blueprints.v1`
+- `esi-assets.read_assets.v1`
+- `esi-industry.read_character_jobs.v1`
+
+After changing scopes on the Developers Portal app, users must **log out and log in again** to grant them.
 
 ## 3. Configure production
 
@@ -30,7 +35,10 @@ window.EVE_INDUSTRY_CONFIG = {
   scopes: [
     'publicData',
     'esi-markets.structure_markets.v1',
-    'esi-universe.read_structures.v1'
+    'esi-universe.read_structures.v1',
+    'esi-characters.read_blueprints.v1',
+    'esi-assets.read_assets.v1',
+    'esi-industry.read_character_jobs.v1'
   ]
 };
 ```

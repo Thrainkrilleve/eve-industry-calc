@@ -463,6 +463,127 @@
     return data.name || null;
   }
 
+  function isNpcStationId(id) {
+    const n = Number(id);
+    return Number.isFinite(n) && n >= 60000000 && n < 64000000;
+  }
+
+  function isLikelyStructureId(id) {
+    const n = Number(id);
+    // Citadel / engineering complex IDs are large int64s.
+    return Number.isFinite(n) && n >= 1000000000000;
+  }
+
+  async function fetchStationName(stationId) {
+    const res = await fetch(
+      `https://esi.evetech.net/latest/universe/stations/${Number(stationId)}/?datasource=tranquility`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.name || null;
+  }
+
+  async function fetchEsiPages(path, accessToken) {
+    if (!accessToken) throw new Error('ESI access token required');
+    const headers = { Authorization: 'Bearer ' + accessToken, Accept: 'application/json' };
+    const base = path.includes('?') ? path + '&' : path + '?';
+    const firstUrl = `https://esi.evetech.net/latest${base}datasource=tranquility&page=1`;
+    const first = await fetch(firstUrl, { headers });
+    if (first.status === 401 || first.status === 403) {
+      throw new Error('ESI forbidden — re-login and confirm app scopes on the Developers Portal');
+    }
+    if (!first.ok) throw new Error(`ESI ${path} failed (${first.status})`);
+    const pages = Number(first.headers.get('X-Pages') || first.headers.get('x-pages') || 1);
+    let rows = await first.json();
+    if (!Array.isArray(rows)) rows = [];
+    for (let page = 2; page <= pages; page += 1) {
+      const res = await fetch(
+        `https://esi.evetech.net/latest${base}datasource=tranquility&page=${page}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(`ESI ${path} page ${page} failed (${res.status})`);
+      const chunk = await res.json();
+      if (Array.isArray(chunk)) rows = rows.concat(chunk);
+    }
+    return rows;
+  }
+
+  function fetchCharacterBlueprints(characterId, accessToken) {
+    return fetchEsiPages(`/characters/${Number(characterId)}/blueprints/`, accessToken);
+  }
+
+  function fetchCharacterAssets(characterId, accessToken) {
+    return fetchEsiPages(`/characters/${Number(characterId)}/assets/`, accessToken);
+  }
+
+  function fetchCharacterIndustryJobs(characterId, accessToken) {
+    return fetchEsiPages(`/characters/${Number(characterId)}/industry/jobs/`, accessToken);
+  }
+
+  /** Resolve a location_id to { kind, id } using optional asset map for containers. */
+  function resolveLocationRef(locationId, assetByItemId) {
+    const id = Number(locationId);
+    if (!Number.isFinite(id)) return null;
+    if (isNpcStationId(id)) return { kind: 'station', id };
+    if (isLikelyStructureId(id)) return { kind: 'structure', id };
+    if (!assetByItemId || !assetByItemId.size) return { kind: 'other', id };
+
+    let current = id;
+    const seen = new Set();
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      if (isNpcStationId(current)) return { kind: 'station', id: current };
+      if (isLikelyStructureId(current)) return { kind: 'structure', id: current };
+      const asset = assetByItemId.get(current);
+      if (!asset) break;
+      if (asset.location_type === 'station' || isNpcStationId(asset.location_id)) {
+        return { kind: 'station', id: Number(asset.location_id) };
+      }
+      if (isLikelyStructureId(asset.location_id)) {
+        return { kind: 'structure', id: Number(asset.location_id) };
+      }
+      current = Number(asset.location_id);
+    }
+    return { kind: 'other', id };
+  }
+
+  async function resolveLocationNames(refs, accessToken) {
+    const out = {};
+    const unique = [];
+    const seen = new Set();
+    for (const ref of refs || []) {
+      if (!ref || !ref.id) continue;
+      const key = ref.kind + ':' + ref.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(ref);
+    }
+    await Promise.all(unique.map(async (ref) => {
+      const key = ref.kind + ':' + ref.id;
+      if (ref.kind === 'station') {
+        out[key] = (await fetchStationName(ref.id)) || ('Station ' + ref.id);
+      } else if (ref.kind === 'structure') {
+        out[key] = (await fetchStructureName(ref.id, accessToken)) || ('Structure ' + ref.id);
+      } else {
+        out[key] = 'Location ' + ref.id;
+      }
+    }));
+    return out;
+  }
+
+  /** Sum asset quantities by type_id (flat; includes items in containers). */
+  function aggregateAssetsByType(assets) {
+    const qty = {};
+    for (const a of assets || []) {
+      const tid = Number(a.type_id);
+      if (!Number.isFinite(tid)) continue;
+      const n = Number(a.quantity);
+      qty[tid] = (qty[tid] || 0) + (Number.isFinite(n) ? n : 0);
+    }
+    return qty;
+  }
+
   global.EveIndustryCore = {
     HUBS,
     STRUCTURE_PRESETS,
@@ -486,6 +607,16 @@
     fetchStructureOrders,
     aggregateStructureOrders,
     fetchStructureAggregates,
-    fetchStructureName
+    fetchStructureName,
+    fetchStationName,
+    isNpcStationId,
+    isLikelyStructureId,
+    fetchEsiPages,
+    fetchCharacterBlueprints,
+    fetchCharacterAssets,
+    fetchCharacterIndustryJobs,
+    resolveLocationRef,
+    resolveLocationNames,
+    aggregateAssetsByType
   };
 })(window);
