@@ -1,6 +1,8 @@
 /**
- * EVE SSO (Authorization Code + PKCE) for GitHub Pages / static hosting.
- * Create a native app at https://developers.eveonline.com/ and set Client ID in the UI.
+ * EVE SSO for GitHub Pages / static hosting.
+ * Confidential web app (client secret) → Authorization Code + Basic auth.
+ * Native app (no secret) → Authorization Code + PKCE.
+ * Docs: https://developers.eveonline.com/docs/services/sso/
  */
 (function (global) {
   'use strict';
@@ -20,6 +22,11 @@
     let str = '';
     bytes.forEach((b) => { str += String.fromCharCode(b); });
     return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /** CCP SSO examples use urlsafe base64 (padding kept) for Basic auth. */
+  function basicAuth(clientId, secret) {
+    return 'Basic ' + btoa(clientId + ':' + secret).replace(/\+/g, '-').replace(/\//g, '_');
   }
 
   function randomString(bytes = 32) {
@@ -49,23 +56,24 @@
   }
 
   function getClientId() {
-    // Committed config.js is source of truth; localStorage override only if non-empty.
+    // Production config wins; localStorage only when config has no clientId.
     const fromConfig = (getConfig().clientId || '').trim();
+    if (fromConfig) return fromConfig;
     try {
       const override = localStorage.getItem(CLIENT_ID_KEY);
       if (override != null && override.trim()) return override.trim();
     } catch {}
-    return fromConfig;
+    return '';
   }
+
   function getClientSecret() {
-    // Confidential web apps require this on the token endpoint.
-    // Prefer config.js; optional session override for local debugging only.
     try {
       const override = sessionStorage.getItem('eveIndustryClientSecret_v1');
       if (override && override.trim()) return override.trim();
     } catch {}
     return (getConfig().clientSecret || '').trim();
   }
+
   function setClientId(id) {
     try {
       const v = (id || '').trim();
@@ -122,23 +130,31 @@
 
   async function beginLogin(scopes = DEFAULT_SCOPES) {
     const clientId = getClientId();
-    if (!clientId) throw new Error('Set your EVE SSO Client ID first (Developers Portal → native app).');
+    if (!clientId) throw new Error('Set your EVE SSO Client ID first (Developers Portal).');
 
-    const verifier = randomString(32);
-    const challenge = b64url(await sha256(verifier));
+    const secret = getClientSecret();
     const state = randomString(16);
-    sessionStorage.setItem(PKCE_STORAGE, JSON.stringify({ verifier, state, clientId }));
+    const session = { state, clientId, confidential: !!secret };
 
     const params = new URLSearchParams({
       response_type: 'code',
       redirect_uri: redirectUri(),
       client_id: clientId,
       scope: scopes.join(' '),
-      state,
-      code_challenge: challenge,
-      code_challenge_method: 'S256'
+      state
     });
-    window.location.href = 'https://login.eveonline.com/v2/oauth/authorize/?' + params.toString();
+
+    if (!secret) {
+      // Native / public client: PKCE only (no client secret).
+      const verifier = randomString(32);
+      const challenge = b64url(await sha256(verifier));
+      session.verifier = verifier;
+      params.set('code_challenge', challenge);
+      params.set('code_challenge_method', 'S256');
+    }
+
+    sessionStorage.setItem(PKCE_STORAGE, JSON.stringify(session));
+    window.location.href = 'https://login.eveonline.com/v2/oauth/authorize?' + params.toString();
   }
 
   async function handleRedirectCallback() {
@@ -148,23 +164,25 @@
     if (!code) return false;
 
     const raw = sessionStorage.getItem(PKCE_STORAGE);
-    if (!raw) throw new Error('Missing PKCE session — start Login with EVE again.');
-    const pkce = JSON.parse(raw);
-    if (state !== pkce.state) throw new Error('OAuth state mismatch.');
+    if (!raw) throw new Error('Missing OAuth session — start Login with EVE again.');
+    const session = JSON.parse(raw);
+    if (state !== session.state) throw new Error('OAuth state mismatch.');
 
-    // CCP rejects credentials in BOTH Basic auth and body — pick one path.
     const secret = getClientSecret();
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
-      code,
-      code_verifier: pkce.verifier,
-      redirect_uri: redirectUri()
+      code
     });
-    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+
     if (secret) {
-      headers.Authorization = 'Basic ' + btoa(pkce.clientId + ':' + secret);
+      // Confidential web app — Basic auth only; body is grant_type + code.
+      headers.Authorization = basicAuth(session.clientId, secret);
     } else {
-      body.set('client_id', pkce.clientId);
+      // Native PKCE — client_id + code_verifier in body, no Authorization.
+      if (!session.verifier) throw new Error('Missing PKCE verifier — start Login with EVE again.');
+      body.set('client_id', session.clientId);
+      body.set('code_verifier', session.verifier);
     }
 
     const res = await fetch('https://login.eveonline.com/v2/oauth/token', {
@@ -174,7 +192,11 @@
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error('Token exchange failed (' + res.status + '): ' + text.slice(0, 200));
+      let hint = '';
+      if (res.status === 401) {
+        hint = ' — check Client ID/Secret match the Developers Portal app, and callback URL is exact.';
+      }
+      throw new Error('Token exchange failed (' + res.status + '): ' + text.slice(0, 200) + hint);
     }
     const token = await res.json();
     const character = await parseJwtCharacter(token.access_token);
@@ -184,12 +206,11 @@
       token_type: token.token_type,
       expires_at: Date.now() + (Number(token.expires_in) || 1200) * 1000,
       character,
-      client_id: pkce.clientId
+      client_id: session.clientId
     };
     saveAuth(auth);
     sessionStorage.removeItem(PKCE_STORAGE);
 
-    // Clean query params from address bar.
     url.search = '';
     window.history.replaceState({}, document.title, url.toString());
     return true;
@@ -210,7 +231,7 @@
     });
     const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
     if (secret) {
-      headers.Authorization = 'Basic ' + btoa(auth.client_id + ':' + secret);
+      headers.Authorization = basicAuth(auth.client_id, secret);
     } else {
       body.set('client_id', auth.client_id);
     }
