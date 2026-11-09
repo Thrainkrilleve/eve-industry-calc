@@ -475,10 +475,10 @@
   </div>
 </div>
 
-<script src="config.js"></script>
-<script src="eve-industry-data.js"></script>
-<script src="industry-core.js"></script>
-<script src="auth.js"></script>
+<script src="config.js?v=20261108b"></script>
+<script src="eve-industry-data.js?v=20261108b"></script>
+<script src="industry-core.js?v=20261108b"></script>
+<script src="auth.js?v=20261108b"></script>
 <script>
 const STORAGE_KEY = 'eveIndustryCustom_v2';
 const SELECTED_KEY = 'eveIndustrySelected_v2';
@@ -666,10 +666,14 @@ function saveEveClientId() {
 
 async function eveLogin() {
   try {
-    if (!EveAuth.getClientId()) {
-      alert('EVE login is not configured yet. Ask a developer to set clientId in config.js (or open Developer settings).');
+    // Prefer auth helper, but fall back to config.js directly (avoids stale auth.js cache misses).
+    const clientId = (EveAuth.getClientId && EveAuth.getClientId()) ||
+      (window.EVE_INDUSTRY_CONFIG && window.EVE_INDUSTRY_CONFIG.clientId) || '';
+    if (!String(clientId).trim()) {
+      alert('EVE login is not configured yet. Hard-refresh the page (Ctrl+F5). If it still fails, open ?dev=1 and check Developer settings.');
       return;
     }
+    if (EveAuth.setClientId && clientId) EveAuth.setClientId(String(clientId).trim());
     await EveAuth.beginLogin();
   } catch (err) {
     alert(err.message);

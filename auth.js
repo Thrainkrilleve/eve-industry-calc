@@ -49,12 +49,13 @@
   }
 
   function getClientId() {
-    // Dev override (localStorage) wins, then committed config.js
+    // Committed config.js is source of truth; localStorage override only if non-empty.
+    const fromConfig = (getConfig().clientId || '').trim();
     try {
       const override = localStorage.getItem(CLIENT_ID_KEY);
-      if (override && override.trim()) return override.trim();
+      if (override != null && override.trim()) return override.trim();
     } catch {}
-    return (getConfig().clientId || '').trim();
+    return fromConfig;
   }
   function getClientSecret() {
     // Confidential web apps require this on the token endpoint.
