@@ -1,0 +1,9 @@
+# Raw CCP SDE download + extract (rebuild with build_sde_data.py)
+sde/
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

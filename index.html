@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE Online Industry Calculator</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a2332;
+    --border: #2d3a4f;
+    --accent: #00d4ff;
+    --accent2: #7c5cff;
+    --text: #e8eef5;
+    --muted: #8b9bb4;
+    --success: #3dd68c;
+    --warn: #f5a623;
+    --danger: #f07178;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 20px;
+    line-height: 1.5;
+  }
+  h1 { color: var(--accent); margin: 0 0 6px; font-size: 1.6rem; }
+  h2 { color: var(--accent2); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-top: 0; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .container { max-width: 1500px; margin: 0 auto; }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  input, select, button, textarea {
+    background: #0d1117;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:hover { opacity: 0.9; }
+  button.secondary { background: var(--accent2); color: #fff; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .row label { color: var(--muted); font-size: 13px; }
+  .search-wrap { position: relative; flex: 1; min-width: 260px; }
+  .search-wrap input { width: 100%; }
+  .suggestions {
+    position: absolute;
+    z-index: 20;
+    left: 0; right: 0; top: 100%;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+    display: none;
+  }
+  .suggestions.open { display: block; }
+  .suggestions button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    border-radius: 0;
+    font-weight: 400;
+    padding: 8px 12px;
+  }
+  .suggestions button:hover, .suggestions button.active { background: #243044; }
+  .suggestions .meta { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .flowchart {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-height: 120px;
+  }
+  .node {
+    background: #243044;
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-width: 180px;
+    max-width: 260px;
+    text-align: center;
+  }
+  .node.raw { border-color: var(--success); }
+  .node.fuel { border-color: var(--warn); }
+  .node.intermediate { border-color: var(--accent2); }
+  .node.final { border-color: var(--accent); background: #1e3a5f; }
+  .node small { color: var(--muted); display: block; font-size: 12px; }
+  .arrow { color: var(--muted); font-size: 18px; text-align: center; }
+  .level { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 8px 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .qty { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--accent); }
+  .add-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .add-form label { font-size: 12px; color: var(--muted); }
+  .full { grid-column: 1 / -1; }
+  .tag {
+    display: inline-block;
+    background: #2d3a4f;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin: 2px;
+  }
+  .status-ok { color: var(--success); }
+  .status-bad { color: var(--danger); }
+  .muted { color: var(--muted); }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  .stat { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 120px; }
+  .stat b { display: block; color: var(--accent); font-size: 1.2rem; }
+  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pill {
+    border: 1px solid var(--border);
+    background: #0d1117;
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pill.active { border-color: var(--accent); color: var(--accent); }
+  #knownList { max-height: 220px; overflow-y: auto; }
+  .two-col { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  @media (max-width: 980px) {
+    .two-col, .add-form { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>EVE Online Industry Calculator</h1>
+  <p class="sub">Full SDE reactions + manufacturing chains (ships, modules, components, moon goo). Client-side only.</p>
+
+  <div class="panel" id="loadPanel">
+    <div class="row">
+      <span id="loadStatus">Loading SDE industry data…</span>
+    </div>
+    <div class="stats" id="sdeStats" hidden></div>
+  </div>
+
+  <div class="panel">
+    <h2>Calculator</h2>
+    <div class="pill-row" id="activityPills">
+      <button type="button" class="pill active" data-activity="all">All</button>
+      <button type="button" class="pill" data-activity="r">Reactions</button>
+      <button type="button" class="pill" data-activity="m">Manufacturing</button>
+    </div>
+    <div class="row">
+      <label>Category</label>
+      <select id="categoryFilter"><option value="">All categories</option></select>
+      <label>Search product</label>
+      <div class="search-wrap">
+        <input id="productSearch" type="search" placeholder="e.g. Tungsten Carbide, Merlin, Ceramic Powder" autocomplete="off">
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+      <label>Quantity</label>
+      <input type="number" id="desiredQty" value="1" min="1" step="1">
+      <button onclick="calculate()">Calculate</button>
+      <button class="secondary" onclick="resetToTungsten()">Tungsten Carbide demo</button>
+    </div>
+    <div id="selectedMeta" class="muted"></div>
+    <div id="timeEstimate" class="muted" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <h2>Visual Flowchart</h2>
+      <div class="row">
+        <label>Max depth</label>
+        <input type="number" id="maxDepth" value="6" min="1" max="20" style="width:80px">
+        <label>Nodes / level</label>
+        <input type="number" id="maxNodes" value="24" min="4" max="100" style="width:80px">
+      </div>
+      <div id="flowchart" class="flowchart">
+        <p class="muted">Select a product and click Calculate.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Total Requirements</h2>
+      <p class="muted" style="margin-top:0;font-size:13px;">Resolved to materials with no further SDE recipe (ores, moon goo, PI, fuel blocks when not expanded, etc.).</p>
+      <div id="requirements"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Add / Edit Custom Recipe</h2>
+    <p class="muted" style="font-size:14px;margin-top:0;">Overrides an SDE recipe with the same output name for this browser, or adds a new product.</p>
+    <div class="add-form">
+      <div>
+        <label>Output item name</label>
+        <input type="text" id="outName" placeholder="e.g. My Custom Alloy">
+      </div>
+      <div>
+        <label>Output quantity per run</label>
+        <input type="number" id="outQty" value="200" min="1">
+      </div>
+      <div class="full">
+        <label>Inputs (one per line: quantity item name)</label>
+        <textarea id="inputsText" rows="4" placeholder="100 Tungsten&#10;100 Platinum&#10;5 Nitrogen Fuel Block"></textarea>
+      </div>
+      <div>
+        <label>Base time (hours)</label>
+        <input type="number" id="baseTime" value="3" step="0.5" min="0">
+      </div>
+      <div>
+        <label>Activity</label>
+        <select id="customActivity">
+          <option value="r">Reaction</option>
+          <option value="m">Manufacturing</option>
+        </select>
+      </div>
+      <div class="full">
+        <button onclick="addCustomReaction()">Add / Override Recipe</button>
+        <button class="secondary" onclick="clearCustom()">Clear Custom</button>
+      </div>
+    </div>
+    <div id="customList" style="margin-top:12px;"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Browse SDE Products</h2>
+    <div class="row">
+      <input type="search" id="browseFilter" placeholder="Filter listed products…" style="min-width:260px">
+      <span id="browseCount" class="muted"></span>
+    </div>
+    <div id="knownList"></div>
+  </div>
+</div>
+
+<script src="eve-industry-data.js"></script>
+<script>
+const STORAGE_KEY = 'eveIndustryCustom_v2';
+const SELECTED_KEY = 'eveIndustrySelected_v2';
+
+/** @type {null | {
+ *  names: Record<string,string>,
+ *  groups: Record<string,string>,
+ *  categories: Record<string,string>,
+ *  baseIds: number[],
+ *  recipes: Array<any>,
+ *  recipeCount: number,
+ *  reactions: number,
+ *  manufacturing: number
+ * }} */
+let SDE = null;
+
+/** productName(lower) -> recipe object used by calculator */
+let recipeIndex = new Map();
+/** productName -> display meta */
+let productMeta = new Map();
+let customRecipes = [];
+let selectedProduct = '';
+let activityFilter = 'all';
+let suggestionItems = [];
+let suggestionIndex = -1;
+
+function safeGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+function typeName(id) {
+  return SDE.names[String(id)] || `Type ${id}`;
+}
+
+function hoursFromSeconds(sec) {
+  return (Number(sec) || 0) / 3600;
+}
+
+function normalizeRecipe(raw, custom = false) {
+  return {
+    id: raw.id || (custom ? `custom-${Date.now()}` : `sde-${raw.bp}-${raw.p}`),
+    name: raw.name,
+    output: raw.output,
+    inputs: raw.inputs,
+    timeHours: raw.timeHours,
+    activity: raw.activity || 'm',
+    group: raw.group || '',
+    category: raw.category || '',
+    blueprintTypeID: raw.blueprintTypeID,
+    custom
+  };
+}
+
+function sdeRecipeToCalc(r) {
+  const name = typeName(r.p);
+  return normalizeRecipe({
+    id: `sde-${r.bp}-${r.p}`,
+    name,
+    output: { item: name, qty: r.q },
+    inputs: r.m.map(([tid, qty]) => ({ item: typeName(tid), qty })),
+    timeHours: hoursFromSeconds(r.t),
+    activity: r.a,
+    group: SDE.groups[String(r.g)] || '',
+    category: SDE.categories[String(r.c)] || '',
+    blueprintTypeID: r.bp
+  });
+}
+
+function rebuildIndex() {
+  recipeIndex = new Map();
+  productMeta = new Map();
+
+  if (SDE) {
+    for (const r of SDE.recipes) {
+      const calc = sdeRecipeToCalc(r);
+      const key = calc.output.item.toLowerCase();
+      // Prefer reaction if both somehow collide under same name.
+      if (!recipeIndex.has(key) || calc.activity === 'r') {
+        recipeIndex.set(key, calc);
+        productMeta.set(key, calc);
+      }
+    }
+  }
+
+  for (const custom of customRecipes) {
+    const calc = normalizeRecipe(custom, true);
+    const key = calc.output.item.toLowerCase();
+    recipeIndex.set(key, calc);
+    productMeta.set(key, calc);
+  }
+}
+
+function findReactionByOutput(itemName) {
+  if (!itemName) return null;
+  return recipeIndex.get(itemName.toLowerCase()) || null;
+}
+
+function isFuelName(name) {
+  return /fuel block/i.test(name);
+}
+
+function resolveRequirements(item, qtyNeeded, visited = new Set()) {
+  const key = item.toLowerCase();
+  if (visited.has(key)) return { [item]: qtyNeeded };
+  visited.add(key);
+
+  const reaction = findReactionByOutput(item);
+  if (!reaction) return { [item]: qtyNeeded };
+
+  const runs = Math.ceil(qtyNeeded / reaction.output.qty);
+  const result = {};
+  for (const inp of reaction.inputs) {
+    const needed = inp.qty * runs;
+    const sub = resolveRequirements(inp.item, needed, new Set(visited));
+    for (const [k, v] of Object.entries(sub)) {
+      result[k] = (result[k] || 0) + v;
+    }
+  }
+  return result;
+}
+
+function getChainTree(item, qty, depth = 0, maxDepth = 6) {
+  const reaction = findReactionByOutput(item);
+  if (!reaction || depth >= maxDepth) {
+    return {
+      item,
+      qty,
+      type: !reaction ? (isFuelName(item) ? 'fuel' : 'raw') : 'intermediate',
+      children: []
+    };
+  }
+  const runs = Math.ceil(qty / reaction.output.qty);
+  const children = reaction.inputs.map(inp =>
+    getChainTree(inp.item, inp.qty * runs, depth + 1, maxDepth)
+  );
+  return {
+    item,
+    qty,
+    runs,
+    type: depth === 0 ? 'final' : 'intermediate',
+    timeHours: reaction.timeHours,
+    activity: reaction.activity,
+    children
+  };
+}
+
+function formatQty(n) {
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function renderFlowchart(tree) {
+  const container = document.getElementById('flowchart');
+  container.innerHTML = '';
+  const maxNodes = parseInt(document.getElementById('maxNodes').value, 10) || 24;
+
+  function renderLevel(nodes, level) {
+    if (!nodes || !nodes.length) return;
+    const shown = nodes.slice(0, maxNodes);
+    const hidden = nodes.length - shown.length;
+    const div = document.createElement('div');
+    div.className = 'level';
+    shown.forEach(n => {
+      const node = document.createElement('div');
+      node.className = 'node ' + (n.type || '');
+      const act = n.activity === 'r' ? 'reaction' : n.activity === 'm' ? 'build' : '';
+      node.innerHTML =
+        `<strong>${n.item}</strong><br><span class="qty">${formatQty(n.qty)}</span>` +
+        `<small>${n.runs ? n.runs + ' runs' : ''}${n.timeHours ? ' · ' + n.timeHours.toFixed(2) + 'h' : ''}${act ? ' · ' + act : ''}</small>`;
+      div.appendChild(node);
+    });
+    if (hidden > 0) {
+      const more = document.createElement('div');
+      more.className = 'node intermediate';
+      more.innerHTML = `<strong>+${hidden} more</strong><small>raise nodes/level</small>`;
+      div.appendChild(more);
+    }
+    container.appendChild(div);
+
+    if (shown.some(n => n.children && n.children.length)) {
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      arrow.textContent = '↑ produced from';
+      container.appendChild(arrow);
+      const next = [];
+      shown.forEach(n => { if (n.children) next.push(...n.children); });
+      if (next.length) renderLevel(next, level + 1);
+    }
+  }
+
+  renderLevel([tree], 0);
+}
+
+function filteredProducts() {
+  const cat = document.getElementById('categoryFilter').value;
+  const items = [];
+  for (const recipe of productMeta.values()) {
+    if (activityFilter !== 'all' && recipe.activity !== activityFilter) continue;
+    if (cat && recipe.category !== cat) continue;
+    items.push(recipe);
+  }
+  items.sort((a, b) => a.output.item.localeCompare(b.output.item));
+  return items;
+}
+
+function setSelectedProduct(name, calculateNow = true) {
+  selectedProduct = name;
+  document.getElementById('productSearch').value = name;
+  safeSet(SELECTED_KEY, name);
+  const recipe = findReactionByOutput(name);
+  const meta = document.getElementById('selectedMeta');
+  if (recipe) {
+    meta.innerHTML =
+      `<span class="status-ok">Selected:</span> ${recipe.output.item} · ` +
+      `${recipe.activity === 'r' ? 'Reaction' : 'Manufacturing'} · ` +
+      `${formatQty(recipe.output.qty)} / run · ` +
+      `${recipe.timeHours.toFixed(2)} h base` +
+      (recipe.category ? ` · ${recipe.category}` : '') +
+      (recipe.group ? ` / ${recipe.group}` : '') +
+      (recipe.custom ? ' · <em>custom override</em>' : '');
+  } else {
+    meta.textContent = '';
+  }
+  if (calculateNow) calculate();
+}
+
+function updateSuggestions(query) {
+  const box = document.getElementById('suggestions');
+  const q = (query || '').trim().toLowerCase();
+  const pool = filteredProducts();
+  const matches = !q
+    ? pool.slice(0, 40)
+    : pool.filter(r => r.output.item.toLowerCase().includes(q)).slice(0, 60);
+  suggestionItems = matches;
+  suggestionIndex = matches.length ? 0 : -1;
+  if (!matches.length) {
+    box.classList.remove('open');
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = matches.map((r, i) =>
+    `<button type="button" class="${i === suggestionIndex ? 'active' : ''}" data-idx="${i}">` +
+    `${r.output.item}<span class="meta">${r.activity === 'r' ? 'reaction' : 'build'}${r.category ? ' · ' + r.category : ''}</span>` +
+    `</button>`
+  ).join('');
+  box.classList.add('open');
+}
+
+function calculate() {
+  const item = selectedProduct || document.getElementById('productSearch').value.trim();
+  const qty = parseFloat(document.getElementById('desiredQty').value) || 1;
+  const maxDepth = parseInt(document.getElementById('maxDepth').value, 10) || 6;
+  if (!item) return;
+  if (!findReactionByOutput(item)) {
+    document.getElementById('flowchart').innerHTML = `<p class="status-bad">No recipe found for “${item}”.</p>`;
+    document.getElementById('requirements').innerHTML = '';
+    document.getElementById('timeEstimate').textContent = '';
+    return;
+  }
+
+  selectedProduct = item;
+  const tree = getChainTree(item, qty, 0, maxDepth);
+  renderFlowchart(tree);
+
+  const reqs = resolveRequirements(item, qty);
+  const reqDiv = document.getElementById('requirements');
+  let html = '<table><thead><tr><th>Material</th><th>Total Required</th><th>Notes</th></tr></thead><tbody>';
+  const sorted = Object.entries(reqs).sort((a, b) => b[1] - a[1]);
+  for (const [mat, amount] of sorted) {
+    const note = isFuelName(mat) ? 'Fuel' : (findReactionByOutput(mat) ? 'Unexpanded intermediate' : 'Base / buy');
+    html += `<tr><td>${mat}</td><td class="qty">${formatQty(amount)}</td><td>${note}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  reqDiv.innerHTML = html;
+
+  const reaction = findReactionByOutput(item);
+  const runs = Math.ceil(qty / reaction.output.qty);
+  document.getElementById('timeEstimate').textContent =
+    `Final job: ${runs} run(s) · ${(runs * reaction.timeHours).toFixed(1)} h base before skills/structures. Nested jobs are extra (often parallel).`;
+}
+
+function populateCategories() {
+  const select = document.getElementById('categoryFilter');
+  const cats = new Set();
+  for (const r of productMeta.values()) if (r.category) cats.add(r.category);
+  const current = select.value;
+  select.innerHTML = '<option value="">All categories</option>' +
+    [...cats].sort().map(c => `<option value="${c}">${c}</option>`).join('');
+  if ([...cats].includes(current)) select.value = current;
+}
+
+function renderBrowse() {
+  const q = document.getElementById('browseFilter').value.trim().toLowerCase();
+  const list = filteredProducts().filter(r => !q || r.output.item.toLowerCase().includes(q));
+  document.getElementById('browseCount').textContent = `${list.length.toLocaleString()} products`;
+  const div = document.getElementById('knownList');
+  const slice = list.slice(0, 400);
+  div.innerHTML = slice.map(r =>
+    `<button type="button" class="tag" onclick="setSelectedProduct(${JSON.stringify(r.output.item)})">${r.output.item}</button>`
+  ).join('') + (list.length > slice.length ? `<span class="muted"> …and ${(list.length - slice.length).toLocaleString()} more (narrow the filter)</span>` : '');
+}
+
+function renderCustom() {
+  const div = document.getElementById('customList');
+  if (!customRecipes.length) {
+    div.innerHTML = '<p class="muted">No custom recipes yet.</p>';
+    return;
+  }
+  div.innerHTML = customRecipes.map((r, i) =>
+    `<span class="tag">${r.output.item} <button onclick="removeCustom(${i})" style="margin-left:6px;padding:2px 6px;font-size:11px;">×</button></span>`
+  ).join('');
+}
+
+function addCustomReaction() {
+  const name = document.getElementById('outName').value.trim();
+  const qty = parseFloat(document.getElementById('outQty').value) || 1;
+  const lines = document.getElementById('inputsText').value.split('\n').map(l => l.trim()).filter(Boolean);
+  const time = parseFloat(document.getElementById('baseTime').value) || 0;
+  const activity = document.getElementById('customActivity').value;
+
+  if (!name || !lines.length) {
+    alert('Provide an output name and at least one input.');
+    return;
+  }
+
+  const inputs = [];
+  for (const line of lines) {
+    const m = line.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
+    if (!m) {
+      alert('Invalid input line: ' + line + '\nUse: 100 Item Name');
+      return;
+    }
+    inputs.push({ qty: parseFloat(m[1]), item: m[2].trim() });
+  }
+
+  const reaction = normalizeRecipe({
+    id: 'custom-' + Date.now(),
+    name,
+    output: { item: name, qty },
+    inputs,
+    timeHours: time,
+    activity,
+    group: 'Custom',
+    category: 'Custom'
+  }, true);
+
+  customRecipes = customRecipes.filter(r => r.output.item.toLowerCase() !== name.toLowerCase());
+  customRecipes.push(reaction);
+  safeSet(STORAGE_KEY, customRecipes);
+  rebuildIndex();
+  populateCategories();
+  renderCustom();
+  renderBrowse();
+  setSelectedProduct(name);
+  document.getElementById('outName').value = '';
+  document.getElementById('inputsText').value = '';
+}
+
+function removeCustom(index) {
+  customRecipes.splice(index, 1);
+  safeSet(STORAGE_KEY, customRecipes);
+  rebuildIndex();
+  populateCategories();
+  renderCustom();
+  renderBrowse();
+}
+
+function clearCustom() {
+  if (!confirm('Remove all custom recipes?')) return;
+  customRecipes = [];
+  safeSet(STORAGE_KEY, customRecipes);
+  rebuildIndex();
+  populateCategories();
+  renderCustom();
+  renderBrowse();
+}
+
+function resetToTungsten() {
+  document.getElementById('desiredQty').value = 10000;
+  activityFilter = 'r';
+  document.querySelectorAll('#activityPills .pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.activity === 'r');
+  });
+  document.getElementById('categoryFilter').value = '';
+  setSelectedProduct('Tungsten Carbide');
+  renderBrowse();
+}
+
+function wireUi() {
+  document.querySelectorAll('#activityPills .pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activityFilter = btn.dataset.activity;
+      document.querySelectorAll('#activityPills .pill').forEach(p => p.classList.toggle('active', p === btn));
+      updateSuggestions(document.getElementById('productSearch').value);
+      renderBrowse();
+    });
+  });
+
+  document.getElementById('categoryFilter').addEventListener('change', () => {
+    updateSuggestions(document.getElementById('productSearch').value);
+    renderBrowse();
+  });
+
+  const search = document.getElementById('productSearch');
+  const box = document.getElementById('suggestions');
+  search.addEventListener('focus', () => updateSuggestions(search.value));
+  search.addEventListener('input', () => updateSuggestions(search.value));
+  search.addEventListener('keydown', (e) => {
+    if (!box.classList.contains('open') || !suggestionItems.length) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        setSelectedProduct(search.value.trim());
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      suggestionIndex = (suggestionIndex + 1) % suggestionItems.length;
+      updateSuggestions(search.value);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggestionIndex = (suggestionIndex - 1 + suggestionItems.length) % suggestionItems.length;
+      updateSuggestions(search.value);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = suggestionItems[Math.max(0, suggestionIndex)];
+      if (pick) setSelectedProduct(pick.output.item);
+      box.classList.remove('open');
+    } else if (e.key === 'Escape') {
+      box.classList.remove('open');
+    }
+  });
+  box.addEventListener('mousedown', (e) => {
+    const btn = e.target.closest('button[data-idx]');
+    if (!btn) return;
+    e.preventDefault();
+    const pick = suggestionItems[Number(btn.dataset.idx)];
+    if (pick) setSelectedProduct(pick.output.item);
+    box.classList.remove('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrap')) box.classList.remove('open');
+  });
+
+  document.getElementById('browseFilter').addEventListener('input', renderBrowse);
+}
+
+function verifyCorrections() {
+  const expect = {
+    'Ceramic Powder': ['Hydrogen Fuel Block', 'Evaporite Deposits', 'Silicates'],
+    'Carbon Polymers': ['Helium Fuel Block', 'Hydrocarbons', 'Silicates'],
+    'Crystallite Alloy': ['Helium Fuel Block', 'Cobalt', 'Cadmium']
+  };
+  const lines = [];
+  for (const [name, mats] of Object.entries(expect)) {
+    const r = findReactionByOutput(name);
+    if (!r) { lines.push(`${name}: missing`); continue; }
+    const got = new Set(r.inputs.map(i => i.item));
+    const ok = mats.every(m => got.has(m));
+    lines.push(`${ok ? '✓' : '✗'} ${name}: ${[...got].join(', ')}`);
+  }
+  return lines.join(' · ');
+}
+
+function init() {
+  const status = document.getElementById('loadStatus');
+  if (typeof window.EVE_INDUSTRY_SDE !== 'object' || !window.EVE_INDUSTRY_SDE) {
+    status.innerHTML = '<span class="status-bad">Failed to load eve-industry-data.js. Keep it next to index.html (open the eve-industry-calc folder).</span>';
+    return;
+  }
+
+  SDE = window.EVE_INDUSTRY_SDE;
+  customRecipes = safeGet(STORAGE_KEY, []);
+  // Drop stale v1 reaction storage if present.
+  try { localStorage.removeItem('eveReactions'); localStorage.removeItem('eveCustomReactions'); } catch {}
+
+  rebuildIndex();
+  populateCategories();
+  wireUi();
+  renderCustom();
+  renderBrowse();
+
+  document.getElementById('sdeStats').hidden = false;
+  document.getElementById('sdeStats').innerHTML = `
+    <div class="stat"><b>${SDE.recipeCount.toLocaleString()}</b>recipes</div>
+    <div class="stat"><b>${SDE.reactions.toLocaleString()}</b>reactions</div>
+    <div class="stat"><b>${SDE.manufacturing.toLocaleString()}</b>manufacturing</div>
+    <div class="stat"><b>${SDE.typeCount.toLocaleString()}</b>types named</div>
+  `;
+  status.innerHTML = `<span class="status-ok">SDE loaded.</span> <span class="muted">${verifyCorrections()}</span>`;
+
+  const saved = safeGet(SELECTED_KEY, 'Tungsten Carbide');
+  if (findReactionByOutput(saved)) {
+    if (saved === 'Tungsten Carbide') document.getElementById('desiredQty').value = 10000;
+    setSelectedProduct(saved, true);
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
